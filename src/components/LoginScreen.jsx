@@ -20,7 +20,7 @@ export const LoginScreen = ({ onShowToast }) => {
     if (result.success) {
       onShowToast(`Bienvenido, ${result.user.nombre}`, "success")
     } else {
-      onShowToast(result.error, "error")
+      onShowToast("Credenciales inválidas. Por favor verifica tu email y contraseña.", "error")
     }
   }
 

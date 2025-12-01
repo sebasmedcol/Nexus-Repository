@@ -35,11 +35,11 @@ export const AuthProvider = ({ children }) => {
         sessionStorage.setItem("mvmNexusCurrentUser", JSON.stringify(user))
         return { success: true, user }
       } else {
-        return { success: false, error: "Email o contraseña incorrectos" }
+        return { success: false, error: "Credenciales inválidas" }
       }
     } catch (error) {
       console.error("Login error:", error)
-      return { success: false, error: "Error al iniciar sesión" }
+      return { success: false, error: "Error al conectar con el servidor. Intente nuevamente." }
     }
   }
 

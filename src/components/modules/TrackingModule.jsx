@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "../../contexts/AuthContext"
 import { proyectosAPI, historiasAPI, aprobacionesHistoriaAPI, evidenciasAPI } from "../../lib/api"
+import { uploadToCloudinary, isValidFileType } from "../../lib/cloudinary"
 import { Modal } from "../Modal"
 import { Button } from "../Button"
 
@@ -16,6 +17,7 @@ export const TrackingModule = ({ onShowToast }) => {
   const [userStories, setUserStories] = useState([])
   const [selectedStories, setSelectedStories] = useState([])
   const [evidenceFile, setEvidenceFile] = useState(null)
+  const [uploadingFile, setUploadingFile] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -56,7 +58,6 @@ export const TrackingModule = ({ onShowToast }) => {
     const stories = await historiasAPI.getByProject(project.id_proyecto)
     setUserStories(stories)
 
-    // Pre-select pending approval stories
     const pendingIds = stories.filter((s) => s.estado_historia === "en_revision").map((s) => s.id_historia)
     setSelectedStories(pendingIds)
 
@@ -76,16 +77,23 @@ export const TrackingModule = ({ onShowToast }) => {
       return
     }
 
+    if (!isValidFileType(evidenceFile)) {
+      onShowToast("Solo se permiten archivos Excel (.xls, .xlsx) o CSV (.csv)", "error")
+      return
+    }
+
     try {
-      // Update selected stories to pending approval
+      setUploadingFile(true)
+      onShowToast("Subiendo evidencia...", "info")
+      const uploadResult = await uploadToCloudinary(evidenceFile)
+
       for (const storyId of selectedStories) {
         await historiasAPI.update(storyId, {
           estado_historia: "en_revision",
         })
 
-        // Create evidence record
         await evidenciasAPI.create({
-          archivo_url: `/evidencias/${evidenceFile.name}`,
+          archivo_url: uploadResult.url,
           fecha_subida: new Date().toISOString().split("T")[0],
           estado_evidencia: "pendiente",
           observacion_gerente: null,
@@ -99,6 +107,8 @@ export const TrackingModule = ({ onShowToast }) => {
     } catch (error) {
       console.error("Error submitting progress:", error)
       onShowToast(`Error al enviar progreso: ${error.message}`, "error")
+    } finally {
+      setUploadingFile(false)
     }
   }
 
@@ -111,13 +121,11 @@ export const TrackingModule = ({ onShowToast }) => {
     }
 
     try {
-      // Approve selected stories
       for (const storyId of selectedStories) {
         await historiasAPI.update(storyId, {
           estado_historia: "aprobado",
         })
 
-        // Create aprobación de historia record
         await aprobacionesHistoriaAPI.create({
           fecha: new Date().toISOString().split("T")[0],
           estado: "aprobado",
@@ -127,7 +135,6 @@ export const TrackingModule = ({ onShowToast }) => {
         })
       }
 
-      // Check if all stories are approved
       const allStories = await historiasAPI.getByProject(selectedProject.id_proyecto)
       const allApproved = allStories.every((s) => s.estado_historia === "aprobado")
 
@@ -154,7 +161,6 @@ export const TrackingModule = ({ onShowToast }) => {
   const rejectProgress = async () => {
     if (confirm("¿Está seguro de NO APROBAR este progreso? Las historias volverán a estado pendiente.")) {
       try {
-        // Revert stories to not completed
         const pendingStories = userStories.filter((s) => s.estado_historia === "en_revision")
 
         for (const story of pendingStories) {
@@ -272,7 +278,6 @@ export const TrackingModule = ({ onShowToast }) => {
         </div>
       )}
 
-      {/* Leader Progress Modal */}
       <Modal
         isOpen={showLeaderModal}
         onClose={() => setShowLeaderModal(false)}
@@ -293,11 +298,11 @@ export const TrackingModule = ({ onShowToast }) => {
                     <div
                       key={story.id_historia}
                       className={`flex items-center gap-3 px-4 py-3 bg-white border-2 rounded-lg transition-all ${
-                        story.estado_historia === "aprobado"
+                        story.estado_historia === "aprobado" ||
+                        story.estado_historia === "en_revision" ||
+                        selectedStories.includes(story.id_historia)
                           ? "border-gray-300 opacity-60 bg-gray-50"
-                          : story.estado_historia === "en_revision"
-                            ? "border-gray-300 opacity-60 bg-gray-50"
-                            : "border-gray-200 hover:border-blue-600 hover:bg-blue-50 cursor-pointer"
+                          : "border-gray-200 hover:border-blue-600 hover:bg-blue-50 cursor-pointer"
                       }`}
                     >
                       <input
@@ -330,11 +335,11 @@ export const TrackingModule = ({ onShowToast }) => {
                   type="file"
                   onChange={(e) => setEvidenceFile(e.target.files[0])}
                   required
-                  accept=".pdf,.xls,.xlsx"
+                  accept=".xls,.xlsx,.csv"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600"
                 />
                 <small className="block mt-2 text-gray-600">
-                  Solo se aceptan archivos Excel (.xls, .xlsx) y PDF (.pdf)
+                  Solo se aceptan archivos Excel (.xls, .xlsx) y CSV (.csv)
                 </small>
               </div>
 
@@ -342,14 +347,15 @@ export const TrackingModule = ({ onShowToast }) => {
                 <Button type="button" variant="secondary" onClick={() => setShowLeaderModal(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit">Enviar Progreso</Button>
+                <Button type="submit" disabled={uploadingFile}>
+                  {uploadingFile ? "Subiendo..." : "Enviar Progreso"}
+                </Button>
               </div>
             </form>
           </>
         )}
       </Modal>
 
-      {/* Manager Progress Modal */}
       <Modal isOpen={showManagerModal} onClose={() => setShowManagerModal(false)} title="Aprobar Progreso del Proyecto">
         {selectedProject && (
           <>
