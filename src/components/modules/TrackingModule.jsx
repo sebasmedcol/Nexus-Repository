@@ -1,26 +1,69 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Modal from "../Modal"
+import Button from "../Button"
+import {
+  proyectosAPI,
+  historiasAPI,
+  aprobacionesHistoriaAPI,
+  evidenciasAPI,
+  usuariosAPI,
+  empresasAPI,
+} from "../../lib/api"
 import { useAuth } from "../../contexts/AuthContext"
-import { proyectosAPI, historiasAPI, aprobacionesHistoriaAPI, evidenciasAPI } from "../../lib/api"
-import { uploadToCloudinary, isValidFileType } from "../../lib/cloudinary"
-import { Modal } from "../Modal"
-import { Button } from "../Button"
 
-export const TrackingModule = ({ onShowToast }) => {
+export const TrackingModule = () => {
   const { currentUser, isManager } = useAuth()
+
   const [projects, setProjects] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [userStories, setUserStories] = useState([])
+  const [selectedStories, setSelectedStories] = useState([])
+  const [evidenceFile, setEvidenceFile] = useState(null)
   const [showLeaderModal, setShowLeaderModal] = useState(false)
   const [showManagerModal, setShowManagerModal] = useState(false)
   const [showProgressDetailsModal, setShowProgressDetailsModal] = useState(false)
-  const [selectedProject, setSelectedProject] = useState(null)
-  const [userStories, setUserStories] = useState([])
-  const [projectStories, setProjectStories] = useState({})
-  const [selectedStories, setSelectedStories] = useState([])
-  const [evidenceFile, setEvidenceFile] = useState(null)
-  const [uploadingFile, setUploadingFile] = useState(false)
   const [pendingEvidences, setPendingEvidences] = useState([])
+  const [projectStories, setProjectStories] = useState({})
+
+  const [projectLeader, setProjectLeader] = useState(null)
+  const [projectCompany, setProjectCompany] = useState(null)
+
+  const [managerComment, setManagerComment] = useState("")
+  const [uploadingFile, setUploadingFile] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  const onShowToast = (message, type = "info") => {
+    alert(message)
+  }
+
+  const isValidFileType = (file) => {
+    const validTypes = [
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+    ]
+    const validExtensions = [".xls", ".xlsx", ".csv"]
+    return validTypes.includes(file.type) || validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
+  }
+
+  const uploadToCloudinary = async (file) => {
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("upload_preset", "ml_default")
+
+    const response = await fetch("https://api.cloudinary.com/v1_1/dvvzmnzuo/raw/upload", {
+      method: "POST",
+      body: formData,
+    })
+
+    if (!response.ok) {
+      throw new Error("Error al subir archivo a Cloudinary")
+    }
+
+    return await response.json()
+  }
 
   useEffect(() => {
     loadProjects()
@@ -73,11 +116,27 @@ export const TrackingModule = ({ onShowToast }) => {
     const stories = projectStories[project.id_proyecto] || []
     setUserStories(stories)
 
+    try {
+      const leader = await usuariosAPI.getById(project.id_lider)
+      setProjectLeader(leader)
+    } catch (error) {
+      console.error("Error loading leader:", error)
+      setProjectLeader(null)
+    }
+
+    try {
+      const company = await empresasAPI.getById(project.id_empresa)
+      setProjectCompany(company)
+    } catch (error) {
+      console.error("Error loading company:", error)
+      setProjectCompany(null)
+    }
+
     const storiesInReview = stories.filter((s) => s.estado_historia === "en_revision")
     const evidences = []
     for (const story of storiesInReview) {
       try {
-        const storyEvidences = await evidenciasAPI.getByStory(story.id_historia)
+        const storyEvidences = await evidenciasAPI.getByHistory(story.id_historia)
         evidences.push(...storyEvidences.map((ev) => ({ ...ev, historia: story })))
       } catch (error) {
         console.error("Error loading evidences:", error)
@@ -150,7 +209,7 @@ export const TrackingModule = ({ onShowToast }) => {
     }
   }
 
-  const approveManagerProgress = async (e) => {
+  const approveProgress = async (e) => {
     e.preventDefault()
 
     if (selectedStories.length === 0) {
@@ -167,7 +226,7 @@ export const TrackingModule = ({ onShowToast }) => {
         await aprobacionesHistoriaAPI.create({
           fecha: new Date().toISOString().split("T")[0],
           estado: "aprobado",
-          comentario: "Historia aprobada",
+          comentario: managerComment,
           id_historia: storyId,
           id_gerente: currentUser.id_usuario,
         })
@@ -240,7 +299,7 @@ export const TrackingModule = ({ onShowToast }) => {
   }
 
   return (
-    <div>
+    <div className="space-y-6">
       <div className="mb-8 pb-4 border-b-2 border-gray-200">
         <h2 className="text-4xl font-bold text-blue-600">Seguimiento de Proyectos</h2>
         <p className="text-gray-600 mt-2">Monitoreo de progreso</p>
@@ -332,6 +391,7 @@ export const TrackingModule = ({ onShowToast }) => {
         </div>
       )}
 
+      {/* Modal Actualizar Progreso (Líder) */}
       <Modal
         isOpen={showLeaderModal}
         onClose={() => setShowLeaderModal(false)}
@@ -410,6 +470,7 @@ export const TrackingModule = ({ onShowToast }) => {
         )}
       </Modal>
 
+      {/* Modal Detalles del Progreso (Gerente) */}
       <Modal
         isOpen={showProgressDetailsModal}
         onClose={() => setShowProgressDetailsModal(false)}
@@ -423,11 +484,11 @@ export const TrackingModule = ({ onShowToast }) => {
               <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
                 <div>
                   <strong className="text-gray-700">Líder:</strong>
-                  <span className="text-gray-600 ml-2">{selectedProject.id_lider || "N/A"}</span>
+                  <span className="text-gray-600 ml-2">{projectLeader?.nombre || "Cargando..."}</span>
                 </div>
                 <div>
                   <strong className="text-gray-700">Empresa:</strong>
-                  <span className="text-gray-600 ml-2">{selectedProject.id_empresa}</span>
+                  <span className="text-gray-600 ml-2">{projectCompany?.nombre || "Cargando..."}</span>
                 </div>
                 <div>
                   <strong className="text-gray-700">Período:</strong>
@@ -440,6 +501,29 @@ export const TrackingModule = ({ onShowToast }) => {
                   <span className="text-gray-600 ml-2">{getIncentiveLabel(selectedProject.incentivo) || "N/A"}</span>
                 </div>
               </div>
+
+              <div className="mt-4">
+                <strong className="text-gray-700">Historias aprobadas:</strong>
+                <span className="text-gray-600 ml-2">
+                  {projectStories[selectedProject.id_proyecto]?.filter((s) => s.estado_historia === "aprobado")
+                    .length || 0}{" "}
+                  de {projectStories[selectedProject.id_proyecto]?.length || 0}
+                </span>
+              </div>
+
+              {projectStories[selectedProject.id_proyecto]?.filter((s) => s.estado_historia === "en_revision").length >
+                0 && (
+                <div className="mt-2 flex items-center gap-2 p-3 bg-yellow-50 border-2 border-yellow-300 rounded-lg">
+                  <span className="text-xl">⏳</span>
+                  <span className="font-semibold text-gray-800">
+                    Historias pendientes de aprobación:{" "}
+                    {
+                      projectStories[selectedProject.id_proyecto]?.filter((s) => s.estado_historia === "en_revision")
+                        .length
+                    }
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-6">
@@ -452,7 +536,7 @@ export const TrackingModule = ({ onShowToast }) => {
                   {userStories
                     .filter((s) => s.estado_historia === "en_revision")
                     .map((story) => {
-                      const evidence = pendingEvidences.find((ev) => ev.id_historia === story.id_historia)
+                      const storyEvidences = pendingEvidences.filter((ev) => ev.id_historia === story.id_historia)
                       return (
                         <div key={story.id_historia} className="bg-white border-2 border-gray-200 rounded-lg p-4">
                           <div className="flex items-start gap-3 mb-3">
@@ -472,22 +556,51 @@ export const TrackingModule = ({ onShowToast }) => {
                               </label>
                             </div>
                           </div>
-                          {evidence && (
-                            <div className="ml-8 mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
-                              <div className="text-sm">
-                                <strong className="text-blue-800">Evidencia:</strong>
-                                <a
-                                  href={evidence.archivo_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                          {storyEvidences.length > 0 && (
+                            <div className="ml-8 mt-2 space-y-2">
+                              {storyEvidences.map((evidence, idx) => (
+                                <div
+                                  key={evidence.id_evidencia}
+                                  className="p-3 bg-blue-50 border border-blue-200 rounded"
                                 >
-                                  Ver archivo
-                                </a>
-                                <div className="mt-1 text-gray-600">
-                                  <strong>Fecha de subida:</strong> {evidence.fecha_subida}
+                                  <div className="text-sm">
+                                    <strong className="text-blue-800">Evidencia {idx + 1}:</strong>
+                                    <div className="mt-1">
+                                      <a
+                                        href={evidence.archivo_url}
+                                        download
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                                      >
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          className="h-4 w-4"
+                                          fill="none"
+                                          viewBox="0 0 24 24"
+                                          stroke="currentColor"
+                                        >
+                                          <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+                                          />
+                                        </svg>
+                                        Descargar evidencia
+                                      </a>
+                                    </div>
+                                    <div className="mt-2 text-gray-600">
+                                      <strong>Fecha de subida:</strong> {evidence.fecha_subida}
+                                    </div>
+                                    {evidence.estado_evidencia && (
+                                      <div className="mt-1 text-gray-600">
+                                        <strong>Estado:</strong> {evidence.estado_evidencia}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -498,13 +611,10 @@ export const TrackingModule = ({ onShowToast }) => {
 
               <div className="flex gap-4 justify-end pt-4 border-t-2 border-gray-200">
                 <Button type="button" variant="danger" onClick={rejectProgress}>
-                  No Aprobar
+                  Rechazar
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setShowProgressDetailsModal(false)}>
-                  Cancelar
-                </Button>
-                <Button type="button" onClick={approveManagerProgress}>
-                  Aprobar Historias Seleccionadas
+                <Button type="button" variant="success" onClick={approveProgress}>
+                  Aprobar Seleccionadas
                 </Button>
               </div>
             </div>
@@ -512,6 +622,7 @@ export const TrackingModule = ({ onShowToast }) => {
         )}
       </Modal>
 
+      {/* Modal Aprobar Progreso (Gerente) */}
       <Modal isOpen={showManagerModal} onClose={() => setShowManagerModal(false)} title="Aprobar Progreso del Proyecto">
         {selectedProject && (
           <>
@@ -523,7 +634,7 @@ export const TrackingModule = ({ onShowToast }) => {
               </p>
             </div>
 
-            <form onSubmit={approveManagerProgress} className="space-y-6">
+            <form onSubmit={approveProgress} className="space-y-6">
               <div>
                 <label className="block mb-2 text-gray-700 font-semibold">
                   Historias de Usuario Pendientes de Aprobación
@@ -534,7 +645,9 @@ export const TrackingModule = ({ onShowToast }) => {
                     .map((story) => (
                       <div
                         key={story.id_historia}
-                        className="flex items-center gap-3 px-4 py-3 bg-white border-2 border-gray-200 rounded-lg hover:border-blue-600 hover:bg-blue-50 transition-all cursor-pointer"
+                        className={`flex items-center gap-3 px-4 py-3 bg-white border-2 rounded-lg transition-all ${
+                          selectedStories.includes(story.id_historia) ? "border-blue-600 bg-blue-50" : ""
+                        }`}
                       >
                         <input
                           type="checkbox"
@@ -567,3 +680,5 @@ export const TrackingModule = ({ onShowToast }) => {
     </div>
   )
 }
+
+export default TrackingModule

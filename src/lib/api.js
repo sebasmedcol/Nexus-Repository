@@ -296,6 +296,14 @@ export const empresasAPI = {
     return handleResponse(response)
   },
 
+  getById: async (id) => {
+    const response = await fetch(`${BASE_URL}/rest/v1/empresa?id_empresa=eq.${id}`, {
+      headers: getHeaders(),
+    })
+    const data = await handleResponse(response)
+    return data[0]
+  },
+
   create: async (empresa) => {
     const response = await fetch(`${BASE_URL}/rest/v1/empresa`, {
       method: "POST",
