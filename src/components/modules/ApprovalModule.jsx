@@ -24,15 +24,8 @@ export const ApprovalModule = ({ onShowToast }) => {
       setLoading(true)
       const data = await proyectosAPI.getAll()
 
-      const historias = await historiasAPI.getAll()
-
-      // Filtrar proyectos que están pendientes, en revisión, o tienen historias en revisión
       const pending = data.filter((p) => {
-        const isPendingStatus = p.estado_proyecto === "pendiente" || p.estado_proyecto === "en-revision"
-        const hasStoriesInReview = historias.some(
-          (h) => h.id_proyecto === p.id_proyecto && h.estado_historia === "en_revision",
-        )
-        return isPendingStatus || hasStoriesInReview
+        return p.estado_proyecto === "pendiente" || p.estado_proyecto === "en-revision"
       })
 
       setProjects(pending)

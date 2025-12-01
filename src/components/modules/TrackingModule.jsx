@@ -13,11 +13,14 @@ export const TrackingModule = ({ onShowToast }) => {
   const [loading, setLoading] = useState(true)
   const [showLeaderModal, setShowLeaderModal] = useState(false)
   const [showManagerModal, setShowManagerModal] = useState(false)
+  const [showProgressDetailsModal, setShowProgressDetailsModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState(null)
   const [userStories, setUserStories] = useState([])
+  const [projectStories, setProjectStories] = useState({})
   const [selectedStories, setSelectedStories] = useState([])
   const [evidenceFile, setEvidenceFile] = useState(null)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [pendingEvidences, setPendingEvidences] = useState([])
 
   useEffect(() => {
     loadProjects()
@@ -36,6 +39,18 @@ export const TrackingModule = ({ onShowToast }) => {
 
       const approved = data.filter((p) => p.estado_proyecto === "aprobado")
       setProjects(approved)
+
+      const storiesMap = {}
+      for (const project of approved) {
+        try {
+          const stories = await historiasAPI.getByProject(project.id_proyecto)
+          storiesMap[project.id_proyecto] = stories
+        } catch (error) {
+          console.error(`Error loading stories for project ${project.id_proyecto}:`, error)
+          storiesMap[project.id_proyecto] = []
+        }
+      }
+      setProjectStories(storiesMap)
     } catch (error) {
       console.error("Error loading projects:", error)
       onShowToast("Error al cargar proyectos", "error")
@@ -46,16 +61,39 @@ export const TrackingModule = ({ onShowToast }) => {
 
   const openLeaderModal = async (project) => {
     setSelectedProject(project)
-    const stories = await historiasAPI.getByProject(project.id_proyecto)
+    const stories = projectStories[project.id_proyecto] || []
     setUserStories(stories)
     setSelectedStories([])
     setEvidenceFile(null)
     setShowLeaderModal(true)
   }
 
+  const openProgressDetailsModal = async (project) => {
+    setSelectedProject(project)
+    const stories = projectStories[project.id_proyecto] || []
+    setUserStories(stories)
+
+    const storiesInReview = stories.filter((s) => s.estado_historia === "en_revision")
+    const evidences = []
+    for (const story of storiesInReview) {
+      try {
+        const storyEvidences = await evidenciasAPI.getByStory(story.id_historia)
+        evidences.push(...storyEvidences.map((ev) => ({ ...ev, historia: story })))
+      } catch (error) {
+        console.error("Error loading evidences:", error)
+      }
+    }
+    setPendingEvidences(evidences)
+
+    const pendingIds = storiesInReview.map((s) => s.id_historia)
+    setSelectedStories(pendingIds)
+
+    setShowProgressDetailsModal(true)
+  }
+
   const openManagerModal = async (project) => {
     setSelectedProject(project)
-    const stories = await historiasAPI.getByProject(project.id_proyecto)
+    const stories = projectStories[project.id_proyecto] || []
     setUserStories(stories)
 
     const pendingIds = stories.filter((s) => s.estado_historia === "en_revision").map((s) => s.id_historia)
@@ -150,6 +188,7 @@ export const TrackingModule = ({ onShowToast }) => {
         )
       }
 
+      setShowProgressDetailsModal(false)
       setShowManagerModal(false)
       loadProjects()
     } catch (error) {
@@ -170,6 +209,7 @@ export const TrackingModule = ({ onShowToast }) => {
         }
 
         onShowToast("Progreso no aprobado. Las historias han vuelto a estado pendiente.", "error")
+        setShowProgressDetailsModal(false)
         setShowManagerModal(false)
         loadProjects()
       } catch (error) {
@@ -214,10 +254,10 @@ export const TrackingModule = ({ onShowToast }) => {
       ) : (
         <div className="space-y-6">
           {projects.map((project) => {
-            const projectStories = userStories.filter((s) => s.id_proyecto === project.id_proyecto)
-            const approvedCount = projectStories.filter((s) => s.estado_historia === "aprobado").length
-            const pendingCount = projectStories.filter((s) => s.estado_historia === "en_revision").length
-            const totalCount = projectStories.length
+            const stories = projectStories[project.id_proyecto] || []
+            const approvedCount = stories.filter((s) => s.estado_historia === "aprobado").length
+            const pendingCount = stories.filter((s) => s.estado_historia === "en_revision").length
+            const totalCount = stories.length
             const progress = totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0
 
             return (
@@ -231,13 +271,27 @@ export const TrackingModule = ({ onShowToast }) => {
 
                     <div className="space-y-3 mb-6">
                       <div className="flex gap-2">
-                        <strong className="text-gray-700">ID Empresa:</strong>
+                        <strong className="text-gray-700">Líder:</strong>
+                        <span className="text-gray-600">{currentUser.nombre || "N/A"}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <strong className="text-gray-700">Empresa:</strong>
                         <span className="text-gray-600">{project.id_empresa}</span>
                       </div>
                       <div className="flex gap-2">
                         <strong className="text-gray-700">Período:</strong>
                         <span className="text-gray-600">
                           {project.fecha_inicio} → {project.fecha_fin}
+                        </span>
+                      </div>
+                      <div className="flex gap-2">
+                        <strong className="text-gray-700">Incentivo:</strong>
+                        <span className="text-gray-600">{getIncentiveLabel(project.incentivo) || "N/A"}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <strong className="text-gray-700">Historias aprobadas:</strong>
+                        <span className="text-gray-600">
+                          {approvedCount} de {totalCount}
                         </span>
                       </div>
                       {pendingCount > 0 && (
@@ -262,7 +316,7 @@ export const TrackingModule = ({ onShowToast }) => {
 
                   <div className="flex items-center">
                     {isManager && pendingCount > 0 ? (
-                      <Button onClick={() => openManagerModal(project)} className="w-full">
+                      <Button onClick={() => openProgressDetailsModal(project)} className="w-full">
                         Aprobar Progreso ({pendingCount})
                       </Button>
                     ) : !isManager ? (
@@ -352,6 +406,108 @@ export const TrackingModule = ({ onShowToast }) => {
                 </Button>
               </div>
             </form>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showProgressDetailsModal}
+        onClose={() => setShowProgressDetailsModal(false)}
+        title="Detalles del Progreso"
+        size="large"
+      >
+        {selectedProject && (
+          <>
+            <div className="bg-gray-50 p-6 rounded-lg mb-6">
+              <h4 className="text-xl font-bold text-blue-600 mb-2">{selectedProject.nombre}</h4>
+              <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+                <div>
+                  <strong className="text-gray-700">Líder:</strong>
+                  <span className="text-gray-600 ml-2">{selectedProject.id_lider || "N/A"}</span>
+                </div>
+                <div>
+                  <strong className="text-gray-700">Empresa:</strong>
+                  <span className="text-gray-600 ml-2">{selectedProject.id_empresa}</span>
+                </div>
+                <div>
+                  <strong className="text-gray-700">Período:</strong>
+                  <span className="text-gray-600 ml-2">
+                    {selectedProject.fecha_inicio} → {selectedProject.fecha_fin}
+                  </span>
+                </div>
+                <div>
+                  <strong className="text-gray-700">Incentivo:</strong>
+                  <span className="text-gray-600 ml-2">{getIncentiveLabel(selectedProject.incentivo) || "N/A"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block mb-3 text-gray-700 font-semibold text-lg">
+                  Historias Pendientes de Aprobación (
+                  {userStories.filter((s) => s.estado_historia === "en_revision").length})
+                </label>
+                <div className="border-2 border-yellow-300 bg-yellow-50 rounded-lg p-4 max-h-96 overflow-y-auto space-y-3">
+                  {userStories
+                    .filter((s) => s.estado_historia === "en_revision")
+                    .map((story) => {
+                      const evidence = pendingEvidences.find((ev) => ev.id_historia === story.id_historia)
+                      return (
+                        <div key={story.id_historia} className="bg-white border-2 border-gray-200 rounded-lg p-4">
+                          <div className="flex items-start gap-3 mb-3">
+                            <input
+                              type="checkbox"
+                              id={`story-detail-${story.id_historia}`}
+                              checked={selectedStories.includes(story.id_historia)}
+                              onChange={() => toggleStory(story.id_historia)}
+                              className="w-5 h-5 cursor-pointer mt-1"
+                            />
+                            <div className="flex-1">
+                              <label
+                                htmlFor={`story-detail-${story.id_historia}`}
+                                className="cursor-pointer font-medium text-gray-800"
+                              >
+                                {story.descripcion}
+                              </label>
+                            </div>
+                          </div>
+                          {evidence && (
+                            <div className="ml-8 mt-2 p-3 bg-blue-50 border border-blue-200 rounded">
+                              <div className="text-sm">
+                                <strong className="text-blue-800">Evidencia:</strong>
+                                <a
+                                  href={evidence.archivo_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ml-2 text-blue-600 hover:text-blue-800 underline"
+                                >
+                                  Ver archivo
+                                </a>
+                                <div className="mt-1 text-gray-600">
+                                  <strong>Fecha de subida:</strong> {evidence.fecha_subida}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+
+              <div className="flex gap-4 justify-end pt-4 border-t-2 border-gray-200">
+                <Button type="button" variant="danger" onClick={rejectProgress}>
+                  No Aprobar
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setShowProgressDetailsModal(false)}>
+                  Cancelar
+                </Button>
+                <Button type="button" onClick={approveManagerProgress}>
+                  Aprobar Historias Seleccionadas
+                </Button>
+              </div>
+            </div>
           </>
         )}
       </Modal>
