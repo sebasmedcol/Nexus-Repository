@@ -69,23 +69,24 @@ export const ApprovalModule = ({ onShowToast }) => {
       // Update project status
       await proyectosAPI.update(selectedProject.id_proyecto, {
         estado_proyecto: "aprobado",
+        incentivo: Number.parseFloat(incentive),
       })
 
       // Create approval record
       await aprobacionesAPI.create({
+        fecha_aprobacion: new Date().toISOString().split("T")[0],
+        estado_asignado: "aprobado",
+        motivo_devolucion: null,
         id_proyecto: selectedProject.id_proyecto,
-        id_aprobador: currentUser.id_usuario,
-        estado_aprobacion: "aprobado",
-        incentivo: incentive,
-        comentarios: "",
+        id_gerente: currentUser.id_usuario,
       })
 
-      onShowToast(`Proyecto "${selectedProject.nombre_proyecto}" aprobado con éxito`, "success")
+      onShowToast(`Proyecto "${selectedProject.nombre}" aprobado con éxito`, "success")
       closeModal()
       loadPendingProjects()
     } catch (error) {
       console.error("Error approving project:", error)
-      onShowToast("Error al aprobar proyecto", "error")
+      onShowToast(`Error al aprobar proyecto: ${error.message}`, "error")
     }
   }
 
@@ -96,10 +97,11 @@ export const ApprovalModule = ({ onShowToast }) => {
       })
 
       await aprobacionesAPI.create({
+        fecha_aprobacion: new Date().toISOString().split("T")[0],
+        estado_asignado: "devuelto",
+        motivo_devolucion: "Proyecto devuelto para mejoras",
         id_proyecto: selectedProject.id_proyecto,
-        id_aprobador: currentUser.id_usuario,
-        estado_aprobacion: "devuelto",
-        comentarios: "Proyecto devuelto para mejoras",
+        id_gerente: currentUser.id_usuario,
       })
 
       onShowToast("Proyecto devuelto al líder para mejoras", "info")
@@ -107,7 +109,7 @@ export const ApprovalModule = ({ onShowToast }) => {
       loadPendingProjects()
     } catch (error) {
       console.error("Error returning project:", error)
-      onShowToast("Error al devolver proyecto", "error")
+      onShowToast(`Error al devolver proyecto: ${error.message}`, "error")
     }
   }
 
@@ -119,10 +121,11 @@ export const ApprovalModule = ({ onShowToast }) => {
         })
 
         await aprobacionesAPI.create({
+          fecha_aprobacion: new Date().toISOString().split("T")[0],
+          estado_asignado: "rechazado",
+          motivo_devolucion: "Proyecto no aprobado",
           id_proyecto: selectedProject.id_proyecto,
-          id_aprobador: currentUser.id_usuario,
-          estado_aprobacion: "rechazado",
-          comentarios: "Proyecto no aprobado",
+          id_gerente: currentUser.id_usuario,
         })
 
         onShowToast("Proyecto NO aprobado", "error")
@@ -130,7 +133,7 @@ export const ApprovalModule = ({ onShowToast }) => {
         loadPendingProjects()
       } catch (error) {
         console.error("Error rejecting project:", error)
-        onShowToast("Error al rechazar proyecto", "error")
+        onShowToast(`Error al rechazar proyecto: ${error.message}`, "error")
       }
     }
   }
@@ -171,7 +174,7 @@ export const ApprovalModule = ({ onShowToast }) => {
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2">
                   <div className="flex items-start gap-4 mb-4">
-                    <h3 className="text-2xl font-bold text-gray-800">{project.nombre_proyecto}</h3>
+                    <h3 className="text-2xl font-bold text-gray-800">{project.nombre}</h3>
                     {project.estado_proyecto === "en-revision" && (
                       <span className="px-3 py-1 bg-blue-200 text-blue-900 rounded-full text-xs font-semibold">
                         En Revisión
@@ -208,6 +211,10 @@ export const ApprovalModule = ({ onShowToast }) => {
                         {project.fecha_inicio} → {project.fecha_fin}
                       </span>
                     </div>
+                    <div className="flex gap-2">
+                      <strong className="text-gray-700">ID Empresa:</strong>
+                      <span className="text-gray-600">{project.id_empresa}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -227,12 +234,15 @@ export const ApprovalModule = ({ onShowToast }) => {
         {selectedProject && (
           <>
             <div className="bg-gray-50 p-6 rounded-lg mb-6">
-              <h4 className="text-xl font-bold text-blue-600 mb-4">{selectedProject.nombre_proyecto}</h4>
+              <h4 className="text-xl font-bold text-blue-600 mb-4">{selectedProject.nombre}</h4>
               <p className="text-gray-700 mb-4">{selectedProject.descripcion}</p>
 
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <strong>Empresa:</strong> {selectedProject.empresa}
+                </div>
+                <div>
+                  <strong>ID Empresa:</strong> {selectedProject.id_empresa}
                 </div>
                 <div>
                   <strong>IA:</strong> {getAILevelLabel(selectedProject.nivel_ia)}
@@ -253,21 +263,16 @@ export const ApprovalModule = ({ onShowToast }) => {
 
             <form onSubmit={approveProject} className="space-y-6">
               <div>
-                <label className="block mb-2 text-gray-700 font-semibold">Incentivo Asignado *</label>
-                <select
+                <label className="block mb-2 text-gray-700 font-semibold">Incentivo Asignado (monto) *</label>
+                <input
+                  type="number"
+                  step="0.01"
                   value={incentive}
                   onChange={(e) => setIncentive(e.target.value)}
                   required
+                  placeholder="Ingrese el monto del incentivo"
                   className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-                >
-                  <option value="">Seleccionar incentivo...</option>
-                  <option value="economico">Incentivo Económico</option>
-                  <option value="laboral">Incentivo Laboral</option>
-                  <option value="temporal">Incentivo Temporal</option>
-                  <option value="formacion">Formación Especializada</option>
-                  <option value="recursos">Recursos Adicionales</option>
-                  <option value="otro">Otro</option>
-                </select>
+                />
               </div>
 
               <div className="flex gap-4 justify-end pt-4 border-t-2 border-gray-200">

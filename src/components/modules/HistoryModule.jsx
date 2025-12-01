@@ -42,7 +42,7 @@ export const HistoryModule = ({ onShowToast }) => {
       const projectsWithStories = await Promise.all(
         data.map(async (project) => {
           const stories = await historiasAPI.getByProject(project.id_proyecto)
-          const approvedCount = stories.filter((s) => s.aprobada).length
+          const approvedCount = stories.filter((s) => s.estado_historia === "aprobado").length
           const totalStories = stories.length
           const progress = totalStories > 0 ? Math.round((approvedCount / totalStories) * 100) : 0
 
@@ -68,7 +68,7 @@ export const HistoryModule = ({ onShowToast }) => {
     let filtered = [...projects]
 
     if (filters.company) {
-      filtered = filtered.filter((p) => p.empresa.toLowerCase().includes(filters.company.toLowerCase()))
+      filtered = filtered.filter((p) => p.id_empresa && p.id_empresa.toString().includes(filters.company))
     }
 
     if (filters.status) {
@@ -133,7 +133,7 @@ export const HistoryModule = ({ onShowToast }) => {
         <div className="flex flex-wrap gap-4 items-center">
           <input
             type="text"
-            placeholder="Filtrar por empresa..."
+            placeholder="Filtrar por ID empresa..."
             value={filters.company}
             onChange={(e) => setFilters({ ...filters, company: e.target.value })}
             className="px-4 py-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600"
@@ -207,9 +207,9 @@ export const HistoryModule = ({ onShowToast }) => {
                   }`}
                 >
                   <td className="px-4 py-4">
-                    <strong className="text-gray-800">{project.nombre_proyecto}</strong>
+                    <strong className="text-gray-800">{project.nombre}</strong>
                   </td>
-                  <td className="px-4 py-4 text-gray-600">{project.empresa}</td>
+                  <td className="px-4 py-4 text-gray-600">{project.id_empresa}</td>
                   <td className="px-4 py-4">
                     <span
                       className={`px-3 py-1 rounded-lg text-xs font-semibold ${
@@ -272,7 +272,7 @@ export const HistoryModule = ({ onShowToast }) => {
       <Modal isOpen={showCancelModal} onClose={() => setShowCancelModal(false)} title="Razón de Cancelación">
         {selectedProject && (
           <div className="bg-gray-50 p-6 rounded-lg">
-            <h4 className="text-xl font-bold text-blue-600 mb-4">{selectedProject.nombre_proyecto}</h4>
+            <h4 className="text-xl font-bold text-blue-600 mb-4">{selectedProject.nombre}</h4>
 
             <div className="mb-4">
               <strong className="block text-gray-700 mb-2">Fecha de Cancelación:</strong>

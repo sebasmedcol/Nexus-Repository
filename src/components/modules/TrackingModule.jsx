@@ -57,7 +57,7 @@ export const TrackingModule = ({ onShowToast }) => {
     setUserStories(stories)
 
     // Pre-select pending approval stories
-    const pendingIds = stories.filter((s) => s.pendiente_aprobacion).map((s) => s.id_historia)
+    const pendingIds = stories.filter((s) => s.estado_historia === "en_revision").map((s) => s.id_historia)
     setSelectedStories(pendingIds)
 
     setShowManagerModal(true)
@@ -80,16 +80,16 @@ export const TrackingModule = ({ onShowToast }) => {
       // Update selected stories to pending approval
       for (const storyId of selectedStories) {
         await historiasAPI.update(storyId, {
-          completada: true,
-          pendiente_aprobacion: true,
+          estado_historia: "en_revision",
         })
 
         // Create evidence record
         await evidenciasAPI.create({
+          archivo_url: `/evidencias/${evidenceFile.name}`,
+          fecha_subida: new Date().toISOString().split("T")[0],
+          estado_evidencia: "pendiente",
+          observacion_gerente: null,
           id_historia: storyId,
-          tipo_evidencia: evidenceFile.name.split(".").pop(),
-          nombre_archivo: evidenceFile.name,
-          ruta_archivo: `/evidencias/${evidenceFile.name}`,
         })
       }
 
@@ -98,7 +98,7 @@ export const TrackingModule = ({ onShowToast }) => {
       loadProjects()
     } catch (error) {
       console.error("Error submitting progress:", error)
-      onShowToast("Error al enviar progreso", "error")
+      onShowToast(`Error al enviar progreso: ${error.message}`, "error")
     }
   }
 
@@ -114,34 +114,29 @@ export const TrackingModule = ({ onShowToast }) => {
       // Approve selected stories
       for (const storyId of selectedStories) {
         await historiasAPI.update(storyId, {
-          aprobada: true,
-          pendiente_aprobacion: false,
+          estado_historia: "aprobado",
         })
 
+        // Create aprobación de historia record
         await aprobacionesHistoriaAPI.create({
+          fecha: new Date().toISOString().split("T")[0],
+          estado: "aprobado",
+          comentario: "Historia aprobada",
           id_historia: storyId,
-          id_aprobador: currentUser.id_usuario,
-          estado_aprobacion: "aprobado",
+          id_gerente: currentUser.id_usuario,
         })
       }
 
       // Check if all stories are approved
       const allStories = await historiasAPI.getByProject(selectedProject.id_proyecto)
-      const allApproved = allStories.every((s) => s.aprobada)
+      const allApproved = allStories.every((s) => s.estado_historia === "aprobado")
 
       if (allApproved) {
         await proyectosAPI.update(selectedProject.id_proyecto, {
           estado_proyecto: "completado",
-          progreso: 100,
         })
         onShowToast("Proyecto completado: todas las historias han sido aprobadas", "success")
       } else {
-        // Update progress
-        const approvedCount = allStories.filter((s) => s.aprobada).length
-        const progress = Math.round((approvedCount / allStories.length) * 100)
-        await proyectosAPI.update(selectedProject.id_proyecto, {
-          progreso: progress,
-        })
         onShowToast(
           `${selectedStories.length} ${selectedStories.length === 1 ? "historia aprobada" : "historias aprobadas"}`,
           "success",
@@ -152,7 +147,7 @@ export const TrackingModule = ({ onShowToast }) => {
       loadProjects()
     } catch (error) {
       console.error("Error approving progress:", error)
-      onShowToast("Error al aprobar progreso", "error")
+      onShowToast(`Error al aprobar progreso: ${error.message}`, "error")
     }
   }
 
@@ -160,12 +155,11 @@ export const TrackingModule = ({ onShowToast }) => {
     if (confirm("¿Está seguro de NO APROBAR este progreso? Las historias volverán a estado pendiente.")) {
       try {
         // Revert stories to not completed
-        const pendingStories = userStories.filter((s) => s.pendiente_aprobacion)
+        const pendingStories = userStories.filter((s) => s.estado_historia === "en_revision")
 
         for (const story of pendingStories) {
           await historiasAPI.update(story.id_historia, {
-            completada: false,
-            pendiente_aprobacion: false,
+            estado_historia: "pendiente",
           })
         }
 
@@ -174,7 +168,7 @@ export const TrackingModule = ({ onShowToast }) => {
         loadProjects()
       } catch (error) {
         console.error("Error rejecting progress:", error)
-        onShowToast("Error al rechazar progreso", "error")
+        onShowToast(`Error al rechazar progreso: ${error.message}`, "error")
       }
     }
   }
@@ -214,11 +208,11 @@ export const TrackingModule = ({ onShowToast }) => {
       ) : (
         <div className="space-y-6">
           {projects.map((project) => {
-            const approvedCount = userStories.filter((s) => s.id_proyecto === project.id_proyecto && s.aprobada).length
-            const pendingCount = userStories.filter(
-              (s) => s.id_proyecto === project.id_proyecto && s.pendiente_aprobacion,
-            ).length
-            const progress = project.progreso || 0
+            const projectStories = userStories.filter((s) => s.id_proyecto === project.id_proyecto)
+            const approvedCount = projectStories.filter((s) => s.estado_historia === "aprobado").length
+            const pendingCount = projectStories.filter((s) => s.estado_historia === "en_revision").length
+            const totalCount = projectStories.length
+            const progress = totalCount > 0 ? Math.round((approvedCount / totalCount) * 100) : 0
 
             return (
               <div
@@ -227,12 +221,12 @@ export const TrackingModule = ({ onShowToast }) => {
               >
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <div className="lg:col-span-2">
-                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{project.nombre_proyecto}</h3>
+                    <h3 className="text-2xl font-bold text-gray-800 mb-4">{project.nombre}</h3>
 
                     <div className="space-y-3 mb-6">
                       <div className="flex gap-2">
-                        <strong className="text-gray-700">Empresa:</strong>
-                        <span className="text-gray-600">{project.empresa}</span>
+                        <strong className="text-gray-700">ID Empresa:</strong>
+                        <span className="text-gray-600">{project.id_empresa}</span>
                       </div>
                       <div className="flex gap-2">
                         <strong className="text-gray-700">Período:</strong>
@@ -287,7 +281,7 @@ export const TrackingModule = ({ onShowToast }) => {
         {selectedProject && (
           <>
             <div className="bg-gray-50 p-6 rounded-lg mb-6">
-              <h4 className="text-xl font-bold text-blue-600 mb-2">{selectedProject.nombre_proyecto}</h4>
+              <h4 className="text-xl font-bold text-blue-600 mb-2">{selectedProject.nombre}</h4>
               <p className="text-gray-700">Seleccione las historias completadas</p>
             </div>
 
@@ -299,9 +293,9 @@ export const TrackingModule = ({ onShowToast }) => {
                     <div
                       key={story.id_historia}
                       className={`flex items-center gap-3 px-4 py-3 bg-white border-2 rounded-lg transition-all ${
-                        story.aprobada
+                        story.estado_historia === "aprobado"
                           ? "border-gray-300 opacity-60 bg-gray-50"
-                          : story.pendiente_aprobacion
+                          : story.estado_historia === "en_revision"
                             ? "border-gray-300 opacity-60 bg-gray-50"
                             : "border-gray-200 hover:border-blue-600 hover:bg-blue-50 cursor-pointer"
                       }`}
@@ -310,16 +304,18 @@ export const TrackingModule = ({ onShowToast }) => {
                         type="checkbox"
                         id={`story-${story.id_historia}`}
                         checked={
-                          story.aprobada || story.pendiente_aprobacion || selectedStories.includes(story.id_historia)
+                          story.estado_historia === "aprobado" ||
+                          story.estado_historia === "en_revision" ||
+                          selectedStories.includes(story.id_historia)
                         }
                         onChange={() => toggleStory(story.id_historia)}
-                        disabled={story.aprobada || story.pendiente_aprobacion}
+                        disabled={story.estado_historia === "aprobado" || story.estado_historia === "en_revision"}
                         className="w-5 h-5 cursor-pointer"
                       />
                       <label htmlFor={`story-${story.id_historia}`} className="flex-1 cursor-pointer">
                         {story.descripcion}
-                        {story.aprobada && <em className="text-green-600 ml-2">(Aprobada)</em>}
-                        {story.pendiente_aprobacion && (
+                        {story.estado_historia === "aprobado" && <em className="text-green-600 ml-2">(Aprobada)</em>}
+                        {story.estado_historia === "en_revision" && (
                           <em className="text-yellow-600 ml-2">(Pendiente de aprobación)</em>
                         )}
                       </label>
@@ -358,10 +354,10 @@ export const TrackingModule = ({ onShowToast }) => {
         {selectedProject && (
           <>
             <div className="bg-gray-50 p-6 rounded-lg mb-6">
-              <h4 className="text-xl font-bold text-blue-600 mb-2">{selectedProject.nombre_proyecto}</h4>
+              <h4 className="text-xl font-bold text-blue-600 mb-2">{selectedProject.nombre}</h4>
               <p className="text-gray-700">
-                <strong>{userStories.filter((s) => s.pendiente_aprobacion).length}</strong> historias pendientes de
-                aprobación
+                <strong>{userStories.filter((s) => s.estado_historia === "en_revision").length}</strong> historias
+                pendientes de aprobación
               </p>
             </div>
 
@@ -372,7 +368,7 @@ export const TrackingModule = ({ onShowToast }) => {
                 </label>
                 <div className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50 max-h-96 overflow-y-auto space-y-2">
                   {userStories
-                    .filter((s) => s.pendiente_aprobacion)
+                    .filter((s) => s.estado_historia === "en_revision")
                     .map((story) => (
                       <div
                         key={story.id_historia}

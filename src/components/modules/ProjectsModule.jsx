@@ -17,13 +17,13 @@ export const ProjectsModule = ({ onShowToast }) => {
 
   // Form state
   const [formData, setFormData] = useState({
-    nombre_proyecto: "",
+    nombre: "",
     descripcion: "",
-    empresa: "",
+    id_empresa: "",
     nivel_ia: "",
     fecha_inicio: "",
     fecha_fin: "",
-    documentos: "",
+    documento: "",
   })
   const [userStories, setUserStories] = useState([])
   const [newStory, setNewStory] = useState("")
@@ -54,13 +54,13 @@ export const ProjectsModule = ({ onShowToast }) => {
       }
       setEditingProject(project)
       setFormData({
-        nombre_proyecto: project.nombre_proyecto,
+        nombre: project.nombre,
         descripcion: project.descripcion,
-        empresa: project.empresa,
+        id_empresa: project.id_empresa,
         nivel_ia: project.nivel_ia,
         fecha_inicio: project.fecha_inicio,
         fecha_fin: project.fecha_fin,
-        documentos: project.documentos || "",
+        documento: project.documento || "",
       })
 
       // Load user stories
@@ -69,13 +69,13 @@ export const ProjectsModule = ({ onShowToast }) => {
     } else {
       setEditingProject(null)
       setFormData({
-        nombre_proyecto: "",
+        nombre: "",
         descripcion: "",
-        empresa: "",
+        id_empresa: "",
         nivel_ia: "",
         fecha_inicio: "",
         fecha_fin: "",
-        documentos: "",
+        documento: "",
       })
       setUserStories([])
     }
@@ -113,10 +113,10 @@ export const ProjectsModule = ({ onShowToast }) => {
       const end = new Date(formData.fecha_fin)
       const diffTime = Math.abs(end - start)
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      const months = Math.round(diffDays / 30)
-      return `${months} ${months === 1 ? "mes" : "meses"} (${diffDays} días)`
+      const months = Math.floor(diffDays / 30)
+      return months
     }
-    return "Seleccione las fechas para calcular la duración"
+    return null
   }
 
   const handleSubmit = async (e) => {
@@ -128,11 +128,19 @@ export const ProjectsModule = ({ onShowToast }) => {
     }
 
     try {
+      const duration = calculateDuration()
       const projectData = {
-        ...formData,
-        id_lider: currentUser.id_usuario,
+        nombre: formData.nombre,
+        descripcion: formData.descripcion,
+        fecha_inicio: formData.fecha_inicio,
+        fecha_fin: formData.fecha_fin,
+        duracion_estimada: duration,
+        nivel_ia: formData.nivel_ia,
+        documento: formData.documento || null,
         estado_proyecto: "pendiente",
-        progreso: 0,
+        incentivo: null,
+        id_lider: currentUser.id_usuario,
+        id_empresa: Number.parseInt(formData.id_empresa),
       }
 
       if (editingProject) {
@@ -147,26 +155,25 @@ export const ProjectsModule = ({ onShowToast }) => {
 
         for (const story of userStories) {
           await historiasAPI.create({
-            id_proyecto: editingProject.id_proyecto,
+            titulo: "Historia de Usuario",
             descripcion: story.text,
-            completada: false,
-            aprobada: false,
+            estado_historia: "pendiente",
+            id_proyecto: editingProject.id_proyecto,
           })
         }
 
         onShowToast("Proyecto actualizado y enviado con éxito", "success")
       } else {
         // Create new project
-        const newProjects = await proyectosAPI.create(projectData)
-        const newProjectId = newProjects[0].id_proyecto
+        const newProject = await proyectosAPI.create(projectData)
+        const newProjectId = newProject.id_proyecto
 
-        // Create user stories
         for (const story of userStories) {
           await historiasAPI.create({
-            id_proyecto: newProjectId,
+            titulo: "Historia de Usuario",
             descripcion: story.text,
-            completada: false,
-            aprobada: false,
+            estado_historia: "pendiente",
+            id_proyecto: newProjectId,
           })
         }
 
@@ -177,7 +184,7 @@ export const ProjectsModule = ({ onShowToast }) => {
       loadProjects()
     } catch (error) {
       console.error("Error saving project:", error)
-      onShowToast("Error al guardar proyecto", "error")
+      onShowToast(`Error al guardar proyecto: ${error.message}`, "error")
     }
   }
 
@@ -264,7 +271,7 @@ export const ProjectsModule = ({ onShowToast }) => {
               className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-600 hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer"
             >
               <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xl font-bold text-gray-800">{project.nombre_proyecto}</h3>
+                <h3 className="text-xl font-bold text-gray-800">{project.nombre}</h3>
                 <span
                   className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
                     project.estado_proyecto === "pendiente"
@@ -304,7 +311,7 @@ export const ProjectsModule = ({ onShowToast }) => {
 
               <div className="space-y-2 text-sm text-gray-600 mb-4 pt-4 border-t border-gray-200">
                 <div>
-                  <strong>Empresa:</strong> {project.empresa}
+                  <strong>Empresa:</strong> {project.id_empresa}
                 </div>
                 <div>
                   <strong>Período:</strong> {project.fecha_inicio} → {project.fecha_fin}
@@ -343,8 +350,8 @@ export const ProjectsModule = ({ onShowToast }) => {
             <label className="block mb-2 text-gray-700 font-semibold">Nombre del Proyecto *</label>
             <input
               type="text"
-              value={formData.nombre_proyecto}
-              onChange={(e) => setFormData({ ...formData, nombre_proyecto: e.target.value })}
+              value={formData.nombre}
+              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
               required
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
             />
@@ -363,12 +370,13 @@ export const ProjectsModule = ({ onShowToast }) => {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block mb-2 text-gray-700 font-semibold">Empresa *</label>
+              <label className="block mb-2 text-gray-700 font-semibold">ID Empresa *</label>
               <input
-                type="text"
-                value={formData.empresa}
-                onChange={(e) => setFormData({ ...formData, empresa: e.target.value })}
+                type="number"
+                value={formData.id_empresa}
+                onChange={(e) => setFormData({ ...formData, id_empresa: e.target.value })}
                 required
+                placeholder="Ingrese el ID de la empresa"
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
               />
             </div>
@@ -417,7 +425,9 @@ export const ProjectsModule = ({ onShowToast }) => {
           <div>
             <label className="block mb-2 text-gray-700 font-semibold">Duración Estimada</label>
             <div className="px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-lg text-blue-800 font-semibold text-center">
-              {calculateDuration()}
+              {calculateDuration() !== null
+                ? `${calculateDuration()} ${calculateDuration() === 1 ? "mes" : "meses"}`
+                : "Seleccione las fechas para calcular la duración"}
             </div>
           </div>
 
