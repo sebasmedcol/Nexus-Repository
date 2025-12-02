@@ -139,15 +139,24 @@ export const TrackingModule = () => {
 
   const openProgressDetailsModal = async (project) => {
     setSelectedProject(project)
-    let stories = projectStories[project.id_proyecto] || []
-    if (!stories || stories.length === 0) {
-      try {
-        stories = await historiasAPI.getByProject(project.id_proyecto)
-        setProjectStories((prev) => ({ ...prev, [project.id_proyecto]: stories }))
-      } catch (error) {
-        stories = []
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    const fetchStoriesWithRetry = async (attempts = 3, delayMs = 500) => {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const s = await historiasAPI.getByProject(project.id_proyecto)
+          const hasPending = s.some((x) => x.estado_historia === "en_revision")
+          if (hasPending || i === attempts - 1) return s
+          await wait(delayMs)
+        } catch (error) {
+          if (i === attempts - 1) return []
+          await wait(delayMs)
+        }
       }
+      return []
     }
+
+    const stories = await fetchStoriesWithRetry(3, 600)
+    setProjectStories((prev) => ({ ...prev, [project.id_proyecto]: stories }))
     setUserStories(stories)
 
     try {
