@@ -121,6 +121,19 @@ export const ProjectsModule = ({ onShowToast }) => {
     setProjectApprovals([])
   }
 
+  useEffect(() => {
+    const pid = sessionStorage.getItem("nexusNavigateProjectId")
+    const target = sessionStorage.getItem("nexusNavigateTarget")
+    if (pid && projects.length > 0 && target === "projectsDetail") {
+      const p = projects.find((x) => String(x.id_proyecto) === String(pid))
+      if (p) {
+        openDetailModal(p)
+        sessionStorage.removeItem("nexusNavigateProjectId")
+        sessionStorage.removeItem("nexusNavigateTarget")
+      }
+    }
+  }, [projects])
+
   const openModal = async (project = null) => {
     if (project) {
       if (project.estado_proyecto !== "devuelto") {

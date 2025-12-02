@@ -77,6 +77,19 @@ export const ApprovalModule = ({ onShowToast }) => {
     setIncentive("")
   }
 
+  useEffect(() => {
+    const pid = sessionStorage.getItem("nexusNavigateProjectId")
+    const target = sessionStorage.getItem("nexusNavigateTarget")
+    if (pid && projects.length > 0 && target === "approvalDetail") {
+      const p = projects.find((x) => String(x.id_proyecto) === String(pid))
+      if (p) {
+        openModal(p)
+        sessionStorage.removeItem("nexusNavigateProjectId")
+        sessionStorage.removeItem("nexusNavigateTarget")
+      }
+    }
+  }, [projects])
+
   const approveProject = async (e) => {
     e.preventDefault()
 

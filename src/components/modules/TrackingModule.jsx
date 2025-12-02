@@ -176,6 +176,19 @@ export const TrackingModule = () => {
     setShowProgressDetailsModal(true)
   }
 
+  useEffect(() => {
+    const pid = sessionStorage.getItem("nexusNavigateProjectId")
+    const target = sessionStorage.getItem("nexusNavigateTarget")
+    if (pid && projects.length > 0 && target === "trackingReview") {
+      const p = projects.find((x) => String(x.id_proyecto) === String(pid))
+      if (p) {
+        openProgressDetailsModal(p)
+        sessionStorage.removeItem("nexusNavigateProjectId")
+        sessionStorage.removeItem("nexusNavigateTarget")
+      }
+    }
+  }, [projects])
+
   const openManagerModal = async (project) => {
     setSelectedProject(project)
     const stories = projectStories[project.id_proyecto] || []
