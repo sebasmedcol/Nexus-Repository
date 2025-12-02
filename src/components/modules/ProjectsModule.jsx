@@ -4,7 +4,24 @@ import { useState, useEffect } from "react"
 import { useAuth } from "../../contexts/AuthContext"
 import { proyectosAPI, historiasAPI } from "../../lib/api"
 import { Modal } from "../Modal"
-import { Button } from "../Button"
+import {
+  Plus,
+  Calendar,
+  Building2,
+  Brain,
+  Edit3,
+  XCircle,
+  Sparkles,
+  Clock,
+  FileText,
+  Trash2,
+  Rocket,
+  Target,
+  Zap,
+  ChevronRight,
+  AlertTriangle,
+  Eye,
+} from "lucide-react"
 
 export const ProjectsModule = ({ onShowToast }) => {
   const { currentUser } = useAuth()
@@ -14,12 +31,18 @@ export const ProjectsModule = ({ onShowToast }) => {
   const [editingProject, setEditingProject] = useState(null)
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelingProjectId, setCancelingProjectId] = useState(null)
+  const [currentStep, setCurrentStep] = useState(1)
+
+  const [showDetailModal, setShowDetailModal] = useState(false)
+  const [selectedProject, setSelectedProject] = useState(null)
+  const [projectStories, setProjectStories] = useState([])
+  const [loadingStories, setLoadingStories] = useState(false)
 
   // Form state
   const [formData, setFormData] = useState({
     nombre: "",
     descripcion: "",
-    id_empresa: "",
+    empresa: "",
     nivel_ia: "",
     fecha_inicio: "",
     fecha_fin: "",
@@ -30,10 +53,14 @@ export const ProjectsModule = ({ onShowToast }) => {
   const [cancelReason, setCancelReason] = useState("")
 
   useEffect(() => {
-    loadProjects()
+    if (currentUser?.id_usuario) {
+      loadProjects()
+    }
   }, [currentUser])
 
   const loadProjects = async () => {
+    if (!currentUser?.id_usuario) return
+
     try {
       setLoading(true)
       const data = await proyectosAPI.getByLeader(currentUser.id_usuario)
@@ -46,6 +73,32 @@ export const ProjectsModule = ({ onShowToast }) => {
     }
   }
 
+  const formatearFecha = (fecha) => {
+    const date = new Date(fecha)
+    return date.toLocaleDateString("es-CO")
+  }
+
+  const openDetailModal = async (project) => {
+    setSelectedProject(project)
+    setShowDetailModal(true)
+    setLoadingStories(true)
+    try {
+      const stories = await historiasAPI.getByProject(project.id_proyecto)
+      setProjectStories(stories)
+    } catch (error) {
+      console.error("Error loading stories:", error)
+      setProjectStories([])
+    } finally {
+      setLoadingStories(false)
+    }
+  }
+
+  const closeDetailModal = () => {
+    setShowDetailModal(false)
+    setSelectedProject(null)
+    setProjectStories([])
+  }
+
   const openModal = async (project = null) => {
     if (project) {
       if (project.estado_proyecto !== "devuelto") {
@@ -56,14 +109,12 @@ export const ProjectsModule = ({ onShowToast }) => {
       setFormData({
         nombre: project.nombre,
         descripcion: project.descripcion,
-        id_empresa: project.id_empresa,
+        empresa: project.empresa,
         nivel_ia: project.nivel_ia,
         fecha_inicio: project.fecha_inicio,
         fecha_fin: project.fecha_fin,
         documento: project.documento || "",
       })
-
-      // Load user stories
       const stories = await historiasAPI.getByProject(project.id_proyecto)
       setUserStories(stories.map((s) => ({ ...s, text: s.descripcion })))
     } else {
@@ -71,7 +122,7 @@ export const ProjectsModule = ({ onShowToast }) => {
       setFormData({
         nombre: "",
         descripcion: "",
-        id_empresa: "",
+        empresa: "",
         nivel_ia: "",
         fecha_inicio: "",
         fecha_fin: "",
@@ -79,6 +130,7 @@ export const ProjectsModule = ({ onShowToast }) => {
       })
       setUserStories([])
     }
+    setCurrentStep(1)
     setShowModal(true)
   }
 
@@ -86,6 +138,7 @@ export const ProjectsModule = ({ onShowToast }) => {
     setShowModal(false)
     setEditingProject(null)
     setNewStory("")
+    setCurrentStep(1)
   }
 
   const addUserStory = () => {
@@ -119,9 +172,16 @@ export const ProjectsModule = ({ onShowToast }) => {
     return null
   }
 
+  const canProceedToStep2 = () => {
+    return formData.nombre && formData.descripcion && formData.empresa && formData.nivel_ia
+  }
+
+  const canProceedToStep3 = () => {
+    return formData.fecha_inicio && formData.fecha_fin
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-
     if (userStories.length === 0) {
       onShowToast("Debe agregar al menos una historia de usuario", "error")
       return
@@ -129,30 +189,29 @@ export const ProjectsModule = ({ onShowToast }) => {
 
     try {
       const duration = calculateDuration()
+      const fechaActual = new Date().toLocaleDateString("sv-SE")
+
       const projectData = {
         nombre: formData.nombre,
         descripcion: formData.descripcion,
         fecha_inicio: formData.fecha_inicio,
         fecha_fin: formData.fecha_fin,
+        fecha_creacion: fechaActual,
         duracion_estimada: duration,
         nivel_ia: formData.nivel_ia,
         documento: formData.documento || null,
         estado_proyecto: "pendiente",
         incentivo: null,
         id_lider: currentUser.id_usuario,
-        id_empresa: Number.parseInt(formData.id_empresa),
+        empresa: formData.empresa,
       }
 
       if (editingProject) {
-        // Update project
         await proyectosAPI.update(editingProject.id_proyecto, projectData)
-
-        // Delete old stories and create new ones
         const oldStories = await historiasAPI.getByProject(editingProject.id_proyecto)
         for (const story of oldStories) {
           await historiasAPI.delete(story.id_historia)
         }
-
         for (const story of userStories) {
           await historiasAPI.create({
             titulo: "Historia de Usuario",
@@ -161,13 +220,10 @@ export const ProjectsModule = ({ onShowToast }) => {
             id_proyecto: editingProject.id_proyecto,
           })
         }
-
         onShowToast("Proyecto actualizado y enviado con éxito", "success")
       } else {
-        // Create new project
         const newProject = await proyectosAPI.create(projectData)
         const newProjectId = newProject.id_proyecto
-
         for (const story of userStories) {
           await historiasAPI.create({
             titulo: "Historia de Usuario",
@@ -176,7 +232,6 @@ export const ProjectsModule = ({ onShowToast }) => {
             id_proyecto: newProjectId,
           })
         }
-
         onShowToast("Proyecto enviado con éxito, a la espera de aprobación", "success")
       }
 
@@ -190,12 +245,10 @@ export const ProjectsModule = ({ onShowToast }) => {
 
   const openCancelModal = (projectId) => {
     const project = projects.find((p) => p.id_proyecto === projectId)
-
     if (project.estado_proyecto === "en-revision") {
       onShowToast("No puede cancelar un proyecto mientras está en revisión", "error")
       return
     }
-
     setCancelingProjectId(projectId)
     setCancelReason("")
     setShowCancelModal(true)
@@ -203,7 +256,6 @@ export const ProjectsModule = ({ onShowToast }) => {
 
   const confirmCancel = async (e) => {
     e.preventDefault()
-
     if (!cancelReason.trim()) {
       onShowToast("Debe proporcionar una justificación", "error")
       return
@@ -214,7 +266,6 @@ export const ProjectsModule = ({ onShowToast }) => {
         estado_proyecto: "cancelado",
         razon_cancelacion: cancelReason,
       })
-
       setShowCancelModal(false)
       loadProjects()
       onShowToast("Proyecto cancelado", "info")
@@ -237,6 +288,19 @@ export const ProjectsModule = ({ onShowToast }) => {
     return labels[status] || status
   }
 
+  const getStatusColor = (status) => {
+    const colors = {
+      pendiente: "bg-yellow-100 text-yellow-700 border-yellow-200",
+      "en-revision": "bg-purple-100 text-purple-700 border-purple-200",
+      devuelto: "bg-orange-100 text-orange-700 border-orange-200",
+      aprobado: "bg-green-100 text-green-700 border-green-200",
+      "no-aprobado": "bg-red-100 text-red-700 border-red-200",
+      cancelado: "bg-gray-100 text-gray-700 border-gray-200",
+      completado: "bg-blue-100 text-blue-700 border-blue-200",
+    }
+    return colors[status] || "bg-gray-100 text-gray-700 border-gray-200"
+  }
+
   const getAILevelLabel = (level) => {
     const labels = {
       bajo: "Bajo",
@@ -247,90 +311,168 @@ export const ProjectsModule = ({ onShowToast }) => {
     return labels[level] || level
   }
 
+  const getAILevelInfo = (level) => {
+    const info = {
+      bajo: { color: "from-emerald-500 to-teal-500", icon: Target, description: "Automatización básica" },
+      medio: { color: "from-blue-500 to-cyan-500", icon: Zap, description: "ML y análisis de datos" },
+      alto: { color: "from-purple-500 to-pink-500", icon: Brain, description: "Deep Learning" },
+      avanzado: { color: "from-orange-500 to-red-500", icon: Rocket, description: "IA Generativa" },
+    }
+    return info[level] || info.bajo
+  }
+
+  const aiLevels = [
+    {
+      value: "bajo",
+      label: "Bajo",
+      icon: Target,
+      color: "from-emerald-500 to-teal-500",
+      description: "Automatización básica",
+    },
+    {
+      value: "medio",
+      label: "Medio",
+      icon: Zap,
+      color: "from-blue-500 to-cyan-500",
+      description: "ML y análisis de datos",
+    },
+    { value: "alto", label: "Alto", icon: Brain, color: "from-purple-500 to-pink-500", description: "Deep Learning" },
+    {
+      value: "avanzado",
+      label: "Avanzado",
+      icon: Rocket,
+      color: "from-orange-500 to-red-500",
+      description: "IA Generativa",
+    },
+  ]
+
+  const steps = [
+    { number: 1, title: "Información", icon: FileText },
+    { number: 2, title: "Cronograma", icon: Calendar },
+    { number: 3, title: "Historias", icon: Target },
+  ]
+
   if (loading) {
-    return <div className="text-center py-8">Cargando proyectos...</div>
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+          <p className="text-gray-600 font-medium">Cargando proyectos...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-8 pb-4 border-b-2 border-gray-200">
-        <h2 className="text-4xl font-bold text-blue-600">Gestión de Proyectos</h2>
-        <Button onClick={() => openModal()}>+ Nuevo Proyecto</Button>
+    <div className="space-y-6">
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-1">
+            Gestión de Proyectos
+          </h2>
+          <p className="text-gray-600">Administra y da seguimiento a tus proyectos</p>
+        </div>
+        <button
+          onClick={() => openModal()}
+          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200"
+        >
+          <Plus className="w-5 h-5" />
+          Nuevo Proyecto
+        </button>
       </div>
 
+      {/* Projects Grid */}
       {projects.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          <h3 className="text-2xl mb-2 text-gray-400">No hay proyectos</h3>
-          <p>Crea tu primer proyecto usando el botón "Nuevo Proyecto"</p>
+        <div className="flex flex-col items-center justify-center py-16 px-4">
+          <div className="w-20 h-20 bg-gradient-to-br from-purple-100 to-blue-100 rounded-2xl flex items-center justify-center mb-4">
+            <Sparkles className="w-10 h-10 text-purple-600" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No hay proyectos aún</h3>
+          <p className="text-gray-500 mb-6 text-center max-w-md">
+            Comienza creando tu primer proyecto usando el botón "Nuevo Proyecto"
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((project) => (
             <div
               key={project.id_proyecto}
-              className="bg-white border-2 border-gray-200 rounded-xl p-6 hover:border-blue-600 hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer"
+              className="bg-white border border-gray-200 rounded-xl p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-200 group"
             >
-              <div className="flex justify-between items-start mb-4">
-                <h3 className="text-xl font-bold text-gray-800">{project.nombre}</h3>
+              <div className="flex justify-between items-start mb-3">
+                <h3 className="text-lg font-bold text-gray-800 group-hover:text-purple-600 transition-colors line-clamp-2 flex-1">
+                  {project.nombre?.toUpperCase()}
+                </h3>
                 <span
-                  className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-                    project.estado_proyecto === "pendiente"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : project.estado_proyecto === "aprobado"
-                        ? "bg-green-100 text-green-800"
-                        : project.estado_proyecto === "rechazado"
-                          ? "bg-red-100 text-red-800"
-                          : project.estado_proyecto === "completado"
-                            ? "bg-blue-100 text-blue-800"
-                            : project.estado_proyecto === "devuelto"
-                              ? "bg-orange-100 text-orange-800"
-                              : project.estado_proyecto === "cancelado"
-                                ? "bg-gray-100 text-gray-800"
-                                : "bg-blue-200 text-blue-900"
-                  }`}
+                  className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ml-2 border ${getStatusColor(project.estado_proyecto)}`}
                 >
                   {getStatusLabel(project.estado_proyecto)}
                 </span>
               </div>
-
-              <p className="text-gray-600 mb-4">{project.descripcion}</p>
-
-              <div
-                className={`inline-block px-3 py-2 rounded-lg text-sm font-semibold mb-4 ${
-                  project.nivel_ia === "bajo"
-                    ? "bg-indigo-100 text-indigo-800"
-                    : project.nivel_ia === "medio"
-                      ? "bg-purple-100 text-purple-800"
-                      : project.nivel_ia === "alto"
-                        ? "bg-fuchsia-100 text-fuchsia-800"
-                        : "bg-pink-100 text-pink-800"
-                }`}
-              >
-                IA: {getAILevelLabel(project.nivel_ia)}
-              </div>
-
-              <div className="space-y-2 text-sm text-gray-600 mb-4 pt-4 border-t border-gray-200">
-                <div>
-                  <strong>Empresa:</strong> {project.id_empresa}
-                </div>
-                <div>
-                  <strong>Período:</strong> {project.fecha_inicio} → {project.fecha_fin}
-                </div>
-                <div>
-                  <strong>Creado:</strong> {new Date(project.fecha_creacion).toLocaleDateString()}
+              <p className="text-gray-600 text-sm mb-4 line-clamp-2">{project.descripcion}</p>
+              <div className="mb-4">
+                <div
+                  className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold ${
+                    project.nivel_ia === "bajo"
+                      ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                      : project.nivel_ia === "medio"
+                        ? "bg-purple-50 text-purple-700 border border-purple-200"
+                        : project.nivel_ia === "alto"
+                          ? "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200"
+                          : "bg-pink-50 text-pink-700 border border-pink-200"
+                  }`}
+                >
+                  <Brain className="w-4 h-4" />
+                  IA: {getAILevelLabel(project.nivel_ia)}
                 </div>
               </div>
+              <div className="space-y-2 text-sm pt-4 border-t border-gray-100">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Building2 className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">Empresa:</span>
+                  <span>{project.empresa?.toUpperCase()}</span>
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Calendar className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">Período:</span>
+                  <span className="text-xs">
+                    {formatearFecha(project.fecha_inicio)} → {formatearFecha(project.fecha_fin)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Clock className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">Creado:</span>
+                  <span className="text-xs">{formatearFecha(project.fecha_creacion)}</span>
+                </div>
+              </div>
+              <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
+                {/* Botón Ver Detalle - siempre visible */}
+                <button
+                  onClick={() => openDetailModal(project)}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium text-sm hover:shadow-lg transition-all"
+                >
+                  <Eye className="w-4 h-4" />
+                  Ver Detalle
+                </button>
 
-              <div className="flex gap-2">
                 {project.estado_proyecto === "devuelto" && (
-                  <Button size="small" onClick={() => openModal(project)}>
+                  <button
+                    onClick={() => openModal(project)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    <Edit3 className="w-4 h-4" />
                     Editar
-                  </Button>
+                  </button>
                 )}
                 {(project.estado_proyecto === "pendiente" || project.estado_proyecto === "aprobado") && (
-                  <Button size="small" variant="danger" onClick={() => openCancelModal(project.id_proyecto)}>
+                  <button
+                    onClick={() => openCancelModal(project.id_proyecto)}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg font-medium text-sm hover:bg-red-100 transition-colors"
+                  >
+                    <XCircle className="w-4 h-4" />
                     Cancelar
-                  </Button>
+                  </button>
                 )}
               </div>
             </div>
@@ -338,173 +480,558 @@ export const ProjectsModule = ({ onShowToast }) => {
         </div>
       )}
 
-      {/* Project Modal */}
+      <Modal isOpen={showDetailModal} onClose={closeDetailModal} title="Detalle del Proyecto" size="large">
+        {selectedProject && (
+          <div className="space-y-6">
+            {/* Header con nombre y estado */}
+            <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl p-6 text-white">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <span
+                    className={`inline-block px-3 py-1 rounded-full text-xs font-semibold mb-3 bg-white/20 backdrop-blur-sm`}
+                  >
+                    {getStatusLabel(selectedProject.estado_proyecto)}
+                  </span>
+                  <h3 className="text-2xl font-bold mb-2">{selectedProject.nombre?.toUpperCase()}</h3>
+                  <p className="text-purple-100 text-sm">{selectedProject.descripcion}</p>
+                </div>
+                <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center ml-4">
+                  <FileText className="w-8 h-8" />
+                </div>
+              </div>
+            </div>
+
+            {/* Información en grid */}
+            <div className="grid grid-cols-2 gap-4">
+              {/* Empresa */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium mb-1">
+                  <Building2 className="w-4 h-4" />
+                  EMPRESA
+                </div>
+                <p className="text-gray-800 font-semibold">{selectedProject.empresa?.toUpperCase()}</p>
+              </div>
+
+              {/* Nivel de IA */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium mb-1">
+                  <Brain className="w-4 h-4" />
+                  NIVEL DE IA
+                </div>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const aiInfo = getAILevelInfo(selectedProject.nivel_ia)
+                    const Icon = aiInfo.icon
+                    return (
+                      <>
+                        <div
+                          className={`w-8 h-8 rounded-lg bg-gradient-to-br ${aiInfo.color} flex items-center justify-center`}
+                        >
+                          <Icon className="w-4 h-4 text-white" />
+                        </div>
+                        <div>
+                          <p className="text-gray-800 font-semibold">{getAILevelLabel(selectedProject.nivel_ia)}</p>
+                          <p className="text-xs text-gray-500">{aiInfo.description}</p>
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+
+              {/* Fecha de Inicio */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium mb-1">
+                  <Calendar className="w-4 h-4" />
+                  FECHA DE INICIO
+                </div>
+                <p className="text-gray-800 font-semibold">{formatearFecha(selectedProject.fecha_inicio)}</p>
+              </div>
+
+              {/* Fecha de Fin */}
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium mb-1">
+                  <Calendar className="w-4 h-4" />
+                  FECHA DE FIN
+                </div>
+                <p className="text-gray-800 font-semibold">{formatearFecha(selectedProject.fecha_fin)}</p>
+              </div>
+            </div>
+
+            {/* Duración y Fecha de creación */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-2xl p-4 border border-purple-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-800 text-sm font-medium">Duración Estimada</p>
+                    <p className="text-3xl font-bold mt-1">
+                      {selectedProject.duracion_estimada} {selectedProject.duracion_estimada === 1 ? "mes" : "meses"}
+                    </p>
+                  </div>
+                  <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Clock className="w-8 h-8" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <div className="flex items-center gap-2 text-gray-500 text-xs font-medium mb-1">
+                  <Clock className="w-4 h-4" />
+                  FECHA DE CREACIÓN
+                </div>
+                <p className="text-gray-800 font-semibold">{formatearFecha(selectedProject.fecha_creacion)}</p>
+              </div>
+            </div>
+
+            {/* Historias de Usuario */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Target className="w-5 h-5 text-purple-600" />
+                <h4 className="text-sm font-semibold text-gray-700">Historias de Usuario</h4>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl border border-gray-200 p-4">
+                {loadingStories ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-8 h-8 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin"></div>
+                  </div>
+                ) : projectStories.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-8 text-gray-400">
+                    <FileText className="w-10 h-10 mb-2" />
+                    <p className="text-sm">No hay historias de usuario</p>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {projectStories.map((story, index) => (
+                      <li
+                        key={story.id_historia}
+                        className="flex items-start gap-3 bg-white border border-gray-200 rounded-xl p-4"
+                      >
+                        <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">
+                          {index + 1}
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-700">{story.descripcion}</p>
+                          <span
+                            className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${
+                              story.estado_historia === "completada"
+                                ? "bg-green-100 text-green-700"
+                                : story.estado_historia === "aprobada"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                            }`}
+                          >
+                            {story.estado_historia === "completada"
+                              ? "Completada"
+                              : story.estado_historia === "aprobada"
+                                ? "Aprobada"
+                                : "Pendiente"}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
+                {projectStories.length} historia{projectStories.length !== 1 ? "s" : ""} de usuario
+              </p>
+            </div>
+
+            {/* Botón cerrar */}
+            <div className="flex justify-end pt-4 border-t border-gray-100">
+              <button
+                onClick={closeDetailModal}
+                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Project Modal - Diseño mejorado con pasos */}
       <Modal
         isOpen={showModal}
         onClose={closeModal}
-        title={editingProject ? "Editar Proyecto" : "Nuevo Proyecto"}
+        title={editingProject ? "Editar Proyecto" : "Crear Nuevo Proyecto"}
         size="large"
       >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block mb-2 text-gray-700 font-semibold">Nombre del Proyecto *</label>
-            <input
-              type="text"
-              value={formData.nombre}
-              onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
-              required
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-            />
+        <div className="space-y-6">
+          {/* Stepper mejorado */}
+          <div className="flex items-center justify-between px-2">
+            {steps.map((step, index) => {
+              const Icon = step.icon
+              const isActive = currentStep === step.number
+              const isCompleted = currentStep > step.number
+
+              return (
+                <div key={step.number} className="flex items-center flex-1">
+                  <div className="flex flex-col items-center">
+                    <div
+                      className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300 ${
+                        isActive
+                          ? "bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-200"
+                          : isCompleted
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-100 text-gray-400"
+                      }`}
+                    >
+                      {isCompleted ? (
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      ) : (
+                        <Icon className="w-5 h-5" />
+                      )}
+                    </div>
+                    <span className={`mt-2 text-xs font-medium ${isActive ? "text-purple-600" : "text-gray-500"}`}>
+                      {step.title}
+                    </span>
+                  </div>
+                  {index < steps.length - 1 && (
+                    <div className="flex-1 mx-3">
+                      <div className={`h-1 rounded-full ${isCompleted ? "bg-green-500" : "bg-gray-200"}`} />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
-          <div>
-            <label className="block mb-2 text-gray-700 font-semibold">Descripción *</label>
-            <textarea
-              value={formData.descripcion}
-              onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
-              required
-              rows="3"
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block mb-2 text-gray-700 font-semibold">ID Empresa *</label>
-              <input
-                type="number"
-                value={formData.id_empresa}
-                onChange={(e) => setFormData({ ...formData, id_empresa: e.target.value })}
-                required
-                placeholder="Ingrese el ID de la empresa"
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-2 text-gray-700 font-semibold">Nivel de Implementación de IA *</label>
-              <select
-                value={formData.nivel_ia}
-                onChange={(e) => setFormData({ ...formData, nivel_ia: e.target.value })}
-                required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-              >
-                <option value="">Seleccionar...</option>
-                <option value="bajo">Bajo - Uso básico de herramientas IA</option>
-                <option value="medio">Medio - Integración moderada de IA</option>
-                <option value="alto">Alto - Implementación profunda de IA</option>
-                <option value="avanzado">Avanzado - IA como componente central</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block mb-2 text-gray-700 font-semibold">Fecha de Inicio *</label>
-              <input
-                type="date"
-                value={formData.fecha_inicio}
-                onChange={(e) => setFormData({ ...formData, fecha_inicio: e.target.value })}
-                required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-2 text-gray-700 font-semibold">Fecha de Fin *</label>
-              <input
-                type="date"
-                value={formData.fecha_fin}
-                onChange={(e) => setFormData({ ...formData, fecha_fin: e.target.value })}
-                required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-gray-700 font-semibold">Duración Estimada</label>
-            <div className="px-4 py-3 bg-blue-50 border-2 border-blue-200 rounded-lg text-blue-800 font-semibold text-center">
-              {calculateDuration() !== null
-                ? `${calculateDuration()} ${calculateDuration() === 1 ? "mes" : "meses"}`
-                : "Seleccione las fechas para calcular la duración"}
-            </div>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-gray-700 font-semibold">Historias de Usuario *</label>
-            <div className="border-2 border-gray-200 rounded-lg p-4 bg-gray-50">
-              <div className="flex gap-2 mb-4">
-                <input
-                  type="text"
-                  value={newStory}
-                  onChange={(e) => setNewStory(e.target.value)}
-                  placeholder="Ingrese una historia de usuario"
-                  className="flex-1 px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600"
-                  onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addUserStory())}
-                />
-                <Button type="button" onClick={addUserStory}>
-                  Agregar
-                </Button>
+          {/* Step 1: Información del Proyecto */}
+          {currentStep === 1 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-4 border border-purple-100">
+                <p className="text-sm text-purple-700">
+                  <strong>Paso 1:</strong> Define la información básica de tu proyecto
+                </p>
               </div>
 
-              {userStories.length === 0 ? (
-                <p className="text-center text-gray-400 italic py-4">No hay historias de usuario agregadas</p>
-              ) : (
-                <ul className="space-y-2">
-                  {userStories.map((story) => (
-                    <li
-                      key={story.id}
-                      className="flex justify-between items-center bg-white border border-gray-200 rounded-lg px-4 py-3"
-                    >
-                      <span>{story.text}</span>
+              <div>
+                <label className="block mb-2 text-sm font-semibold text-gray-700">Nombre del Proyecto *</label>
+                <input
+                  type="text"
+                  value={formData.nombre}
+                  onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all text-sm"
+                  placeholder="Ej: Sistema de gestión de inventarios"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-2 text-sm font-semibold text-gray-700">Descripción *</label>
+                <textarea
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                  rows="3"
+                  className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all text-sm resize-none"
+                  placeholder="Describe brevemente el objetivo y alcance del proyecto..."
+                />
+              </div>
+
+              <div>
+                <label className="block mb-2 text-sm font-semibold text-gray-700">Empresa *</label>
+                <div className="relative">
+                  <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={formData.empresa}
+                    onChange={(e) => setFormData({ ...formData, empresa: e.target.value })}
+                    placeholder="Ingresa el nombre de la empresa"
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all text-sm"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block mb-3 text-sm font-semibold text-gray-700">
+                  Nivel de Inteligencia Artificial *
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  {aiLevels.map((level) => {
+                    const Icon = level.icon
+                    const isSelected = formData.nivel_ia === level.value
+                    return (
                       <button
+                        key={level.value}
                         type="button"
-                        onClick={() => removeUserStory(story.id)}
-                        className="bg-red-600 text-white rounded-full w-7 h-7 flex items-center justify-center hover:bg-red-700 text-xl leading-none"
+                        onClick={() => setFormData({ ...formData, nivel_ia: level.value })}
+                        className={`relative p-4 rounded-xl border-2 transition-all duration-200 text-left ${
+                          isSelected
+                            ? "border-purple-500 bg-purple-50 shadow-md"
+                            : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+                        }`}
                       >
-                        ×
+                        <div
+                          className={`w-10 h-10 rounded-lg bg-gradient-to-br ${level.color} flex items-center justify-center mb-2`}
+                        >
+                          <Icon className="w-5 h-5 text-white" />
+                        </div>
+                        <p className={`font-semibold text-sm ${isSelected ? "text-purple-700" : "text-gray-800"}`}>
+                          {level.label}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-0.5">{level.description}</p>
+                        {isSelected && (
+                          <div className="absolute top-3 right-3 w-5 h-5 bg-purple-500 rounded-full flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                        )}
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  disabled={!canProceedToStep2()}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all ${
+                    canProceedToStep2()
+                      ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:shadow-lg"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  Continuar
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Cronograma */}
+          {currentStep === 2 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 border border-blue-100">
+                <p className="text-sm text-blue-700">
+                  <strong>Paso 2:</strong> Establece el cronograma del proyecto
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block mb-2 text-sm font-semibold text-gray-700">Fecha de Inicio *</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="date"
+                      value={formData.fecha_inicio}
+                      onChange={(e) => setFormData({ ...formData, fecha_inicio: e.target.value })}
+                      className="w-full pl-12 pr-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block mb-2 text-sm font-semibold text-gray-700">Fecha de Fin *</label>
+                  <div className="relative">
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="date"
+                      value={formData.fecha_fin}
+                      onChange={(e) => setFormData({ ...formData, fecha_fin: e.target.value })}
+                      className="w-full pl-12 pr-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white focus:ring-4 focus:ring-purple-100 transition-all text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Duración calculada con diseño visual */}
+              <div className="bg-gradient-to-br from-purple-600 to-blue-600 rounded-2xl p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-purple-200 text-sm font-medium">Duración Estimada</p>
+                    <p className="text-3xl font-bold mt-1">
+                      {calculateDuration() !== null
+                        ? `${calculateDuration()} ${calculateDuration() === 1 ? "mes" : "meses"}`
+                        : "---"}
+                    </p>
+                  </div>
+                  <div className="w-16 h-16 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Clock className="w-8 h-8" />
+                  </div>
+                </div>
+                {calculateDuration() === null && (
+                  <p className="text-purple-200 text-xs mt-2">Selecciona las fechas para calcular</p>
+                )}
+              </div>
+
+              <div className="flex justify-between pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(1)}
+                  className="flex items-center gap-2 px-6 py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-all"
+                >
+                  Atrás
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(3)}
+                  disabled={!canProceedToStep3()}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all ${
+                    canProceedToStep3()
+                      ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:shadow-lg"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  Continuar
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Historias de Usuario */}
+          {currentStep === 3 && (
+            <div className="space-y-5 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-100">
+                <p className="text-sm text-emerald-700">
+                  <strong>Paso 3:</strong> Agrega las historias de usuario del proyecto
+                </p>
+              </div>
+
+              <div>
+                <label className="block mb-3 text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-purple-600" />
+                  Historias de Usuario *
+                </label>
+
+                {/* Input para agregar historia */}
+                <div className="flex gap-3 mb-4">
+                  <input
+                    type="text"
+                    value={newStory}
+                    onChange={(e) => setNewStory(e.target.value)}
+                    placeholder="Ej: Como usuario quiero poder iniciar sesión..."
+                    className="flex-1 px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-purple-500 focus:bg-white transition-all text-sm"
+                    onKeyPress={(e) => e.key === "Enter" && (e.preventDefault(), addUserStory())}
+                  />
+                  <button
+                    type="button"
+                    onClick={addUserStory}
+                    className="px-5 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-semibold text-sm hover:shadow-lg transition-all flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Agregar
+                  </button>
+                </div>
+
+                {/* Lista de historias */}
+                <div className="bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 p-4 min-h-[200px]">
+                  {userStories.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-[180px] text-gray-400">
+                      <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-3">
+                        <FileText className="w-8 h-8" />
+                      </div>
+                      <p className="text-sm font-medium">No hay historias agregadas</p>
+                      <p className="text-xs mt-1">Escribe y agrega al menos una historia de usuario</p>
+                    </div>
+                  ) : (
+                    <ul className="space-y-3">
+                      {userStories.map((story, index) => (
+                        <li
+                          key={story.id}
+                          className="flex items-start gap-3 bg-white border border-gray-200 rounded-xl p-4 hover:border-purple-300 hover:shadow-sm transition-all group"
+                        >
+                          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-blue-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {index + 1}
+                          </div>
+                          <span className="flex-1 text-sm text-gray-700 pt-1">{story.text}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeUserStory(story.id)}
+                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
+                  {userStories.length} historia{userStories.length !== 1 ? "s" : ""} agregada
+                  {userStories.length !== 1 ? "s" : ""}
+                </p>
+              </div>
+
+              <div className="flex justify-between pt-4 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setCurrentStep(2)}
+                  className="flex items-center gap-2 px-6 py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-all"
+                >
+                  Atrás
+                </button>
+                <button
+                  type="submit"
+                  onClick={handleSubmit}
+                  disabled={userStories.length === 0}
+                  className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all ${
+                    userStories.length > 0
+                      ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:shadow-lg"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  }`}
+                >
+                  <Rocket className="w-4 h-4" />
+                  {editingProject ? "Actualizar Proyecto" : "Crear Proyecto"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Cancel Modal - Diseño mejorado */}
+      <Modal isOpen={showCancelModal} onClose={() => setShowCancelModal(false)} title="Cancelar Proyecto">
+        <div className="space-y-5">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+            <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-red-800">Advertencia</p>
+              <p className="text-sm text-red-700 mt-1">
+                Esta acción cancelará permanentemente el proyecto y no se puede deshacer.
+              </p>
             </div>
           </div>
 
-          <div className="flex gap-4 justify-end pt-4 border-t-2 border-gray-200">
-            <Button type="button" variant="secondary" onClick={closeModal}>
-              Cancelar
-            </Button>
-            <Button type="submit">Guardar y Enviar a Aprobación</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* Cancel Modal */}
-      <Modal isOpen={showCancelModal} onClose={() => setShowCancelModal(false)} title="Cancelar Proyecto">
-        <form onSubmit={confirmCancel} className="space-y-6">
           <div>
-            <label className="block mb-2 text-gray-700 font-semibold">Justificación de Cancelación *</label>
+            <label className="block mb-2 text-sm font-semibold text-gray-700">Justificación de Cancelación *</label>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
-              required
               rows="4"
-              placeholder="Por favor explique por qué está cancelando este proyecto..."
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-600 focus:ring-3 focus:ring-blue-100 transition-all"
+              placeholder="Explique detalladamente por qué está cancelando este proyecto..."
+              className="w-full px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl focus:outline-none focus:border-red-500 focus:bg-white focus:ring-4 focus:ring-red-100 transition-all text-sm resize-none"
             />
           </div>
 
-          <div className="flex gap-4 justify-end">
-            <Button type="button" variant="secondary" onClick={() => setShowCancelModal(false)}>
+          <div className="flex gap-3 justify-between pt-4 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setShowCancelModal(false)}
+              className="px-6 py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-all"
+            >
               Volver
-            </Button>
-            <Button type="submit" variant="danger">
+            </button>
+            <button
+              type="submit"
+              onClick={confirmCancel}
+              className="px-6 py-3 bg-red-600 text-white rounded-xl font-semibold text-sm hover:bg-red-700 transition-all"
+            >
               Confirmar Cancelación
-            </Button>
+            </button>
           </div>
-        </form>
+        </div>
       </Modal>
     </div>
   )
