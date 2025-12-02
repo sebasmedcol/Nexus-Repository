@@ -64,22 +64,32 @@ export const TrackingModule = () => {
     return validTypes.includes(file.type) || validExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
   }
 
-  const uploadToCloudinary = async (file) => {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("upload_preset", "ml_default")
+ const uploadToCloudinary = async (file) => {
+  const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME // dzxuwgzn5
+  const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_KEY_NAME // nexus
 
-    const response = await fetch("https://api.cloudinary.com/v1_1/dvvzmnzuo/raw/upload", {
+  console.log("Uploading to Cloudinary:", { CLOUD_NAME, UPLOAD_PRESET })
+
+  const formData = new FormData()
+  formData.append("file", file)
+  formData.append("upload_preset", UPLOAD_PRESET)
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/raw/upload`,
+    {
       method: "POST",
       body: formData,
-    })
-
-    if (!response.ok) {
-      throw new Error("Error al subir archivo a Cloudinary")
     }
+  )
 
-    return await response.json()
+  if (!response.ok) {
+    const error = await response.json()
+    console.error("Cloudinary error:", error)
+    throw new Error(error.error?.message || "Error al subir archivo")
   }
+
+  return await response.json()
+}
 
   useEffect(() => {
     loadProjects()
