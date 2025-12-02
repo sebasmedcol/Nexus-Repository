@@ -139,7 +139,15 @@ export const TrackingModule = () => {
 
   const openProgressDetailsModal = async (project) => {
     setSelectedProject(project)
-    const stories = projectStories[project.id_proyecto] || []
+    let stories = projectStories[project.id_proyecto] || []
+    if (!stories || stories.length === 0) {
+      try {
+        stories = await historiasAPI.getByProject(project.id_proyecto)
+        setProjectStories((prev) => ({ ...prev, [project.id_proyecto]: stories }))
+      } catch (error) {
+        stories = []
+      }
+    }
     setUserStories(stories)
 
     try {
@@ -165,13 +173,12 @@ export const TrackingModule = () => {
         const storyEvidences = await evidenciasAPI.getByHistory(story.id_historia)
         evidences.push(...storyEvidences.map((ev) => ({ ...ev, historia: story })))
       } catch (error) {
-        console.error("Error loading evidences:", error)
+        // no-op
       }
     }
     setPendingEvidences(evidences)
 
-    const pendingIds = storiesInReview.map((s) => s.id_historia)
-    setSelectedStories(pendingIds)
+    setSelectedStories(storiesInReview.map((s) => s.id_historia))
 
     setShowProgressDetailsModal(true)
   }
