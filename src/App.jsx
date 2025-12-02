@@ -24,6 +24,23 @@ function App() {
     }
   }, [currentUser, isManager])
 
+  useEffect(() => {
+    const handler = (e) => {
+      const { module, projectId, target } = e.detail || {}
+      if (module) {
+        if (projectId) {
+          sessionStorage.setItem("nexusNavigateProjectId", String(projectId))
+        }
+        if (target) {
+          sessionStorage.setItem("nexusNavigateTarget", String(target))
+        }
+        setActiveModule(module)
+      }
+    }
+    window.addEventListener("nexus:navigate", handler)
+    return () => window.removeEventListener("nexus:navigate", handler)
+  }, [])
+
   const showToast = (message, type = "info") => {
     setToast({ message, type })
   }

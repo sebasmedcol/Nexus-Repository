@@ -166,7 +166,24 @@ export const TrackingModule = () => {
 
   const openProgressDetailsModal = async (project) => {
     setSelectedProject(project)
-    const stories = projectStories[project.id_proyecto] || []
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    const fetchStoriesWithRetry = async (attempts = 3, delayMs = 500) => {
+      for (let i = 0; i < attempts; i++) {
+        try {
+          const s = await historiasAPI.getByProject(project.id_proyecto)
+          const hasPending = s.some((x) => x.estado_historia === "en_revision")
+          if (hasPending || i === attempts - 1) return s
+          await wait(delayMs)
+        } catch (error) {
+          if (i === attempts - 1) return []
+          await wait(delayMs)
+        }
+      }
+      return []
+    }
+
+    const stories = await fetchStoriesWithRetry(3, 600)
+    setProjectStories((prev) => ({ ...prev, [project.id_proyecto]: stories }))
     setUserStories(stories)
 
     try {
@@ -192,16 +209,28 @@ export const TrackingModule = () => {
         const storyEvidences = await evidenciasAPI.getByHistory(story.id_historia)
         evidences.push(...storyEvidences.map((ev) => ({ ...ev, historia: story })))
       } catch (error) {
-        console.error("Error loading evidences:", error)
+        // no-op
       }
     }
     setPendingEvidences(evidences)
 
-    const pendingIds = storiesInReview.map((s) => s.id_historia)
-    setSelectedStories(pendingIds)
+    setSelectedStories(storiesInReview.map((s) => s.id_historia))
 
     setShowProgressDetailsModal(true)
   }
+
+  useEffect(() => {
+    const pid = sessionStorage.getItem("nexusNavigateProjectId")
+    const target = sessionStorage.getItem("nexusNavigateTarget")
+    if (pid && projects.length > 0 && target === "trackingReview") {
+      const p = projects.find((x) => String(x.id_proyecto) === String(pid))
+      if (p) {
+        openProgressDetailsModal(p)
+        sessionStorage.removeItem("nexusNavigateProjectId")
+        sessionStorage.removeItem("nexusNavigateTarget")
+      }
+    }
+  }, [projects])
 
   const openManagerModal = async (project) => {
     setSelectedProject(project)

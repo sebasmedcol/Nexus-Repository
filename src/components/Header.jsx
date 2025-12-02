@@ -4,37 +4,48 @@ import { useAuth } from "../contexts/AuthContext"
 import { LogOut, User, Shield, Bell, CheckCircle2, RotateCcw, XCircle, Clock, Sparkles, Upload } from "lucide-react"
 import { useEffect, useState } from "react"
 import { proyectosAPI, aprobacionesAPI, aprobacionesHistoriaAPI, historiasAPI, evidenciasAPI } from "../lib/api"
+import { supabase } from "../lib/supabase"
 
 export const Header = () => {
   const { currentUser, logout, isManager } = useAuth()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState([])
   const [unread, setUnread] = useState(0)
+  const [projectIds, setProjectIds] = useState([])
+  const [histMap, setHistMap] = useState(new Map())
+  const readKey = currentUser ? `mvmNexusRead_${currentUser.id_usuario}` : null
 
-  const lastSeenKey = currentUser ? `mvmNexusLastSeen_${currentUser.id_usuario}` : null
+  const getReadSet = () => {
+    if (!readKey) return new Set()
+    try {
+      const raw = sessionStorage.getItem(readKey)
+      return new Set(raw ? JSON.parse(raw) : [])
+    } catch {
+      return new Set()
+    }
+  }
+
+  const setReadSet = (set) => {
+    if (!readKey) return
+    sessionStorage.setItem(readKey, JSON.stringify([...set]))
+  }
 
   const refreshNotifications = async () => {
     if (!currentUser) return
-    const ts = lastSeenKey ? sessionStorage.getItem(lastSeenKey) : null
-    const lastSeen = ts ? new Date(ts) : null
     const items = []
     if (isManager) {
       const projects = await proyectosAPI.getAll()
       const pending = projects.filter((p) => p.estado_proyecto === "pendiente")
       for (const p of pending) {
-        if (!lastSeen || (p.fecha_creacion && new Date(p.fecha_creacion) > lastSeen)) {
-          items.push({ id: `pending_${p.id_proyecto}`, text: `Nuevo proyecto pendiente: ${p.nombre}`, ts: p.fecha_creacion || new Date().toISOString(), type: "pendiente" })
-        }
+        items.push({ id: `p_${p.id_proyecto}`, projectId: p.id_proyecto, text: `Nuevo proyecto pendiente: ${p.nombre}`, ts: p.fecha_creacion || new Date().toISOString(), type: "pendiente" })
       }
       const evidences = await evidenciasAPI.getAll()
       const historias = await historiasAPI.getAll()
       const histToProj = new Map(historias.map((h) => [h.id_historia, h.id_proyecto]))
       for (const ev of evidences) {
-        if (!lastSeen || (ev.fecha_subida && new Date(ev.fecha_subida) > lastSeen)) {
-          const pid = histToProj.get(ev.id_historia)
-          const proj = projects.find((pp) => pp.id_proyecto === pid)
-          items.push({ id: `evidence_${ev.id_evidencia}`, text: `Nueva evidencia en ${proj?.nombre || pid}`, ts: ev.fecha_subida || new Date().toISOString(), type: "evidencia" })
-        }
+        const pid = histToProj.get(ev.id_historia)
+        const proj = projects.find((pp) => pp.id_proyecto === pid)
+        items.push({ id: `e_${ev.id_evidencia}`, projectId: pid, text: `Nueva evidencia en ${proj?.nombre || pid}`, ts: ev.fecha_subida || new Date().toISOString(), type: "evidencia" })
       }
     } else {
       const projects = await proyectosAPI.getByLeader(currentUser.id_usuario)
@@ -42,11 +53,9 @@ export const Header = () => {
       const approvals = await aprobacionesAPI.getAll()
       for (const ap of approvals) {
         if (pids.includes(ap.id_proyecto)) {
-          if (!lastSeen || (ap.fecha_aprobacion && new Date(ap.fecha_aprobacion) > lastSeen)) {
-            const proj = projects.find((p) => p.id_proyecto === ap.id_proyecto)
-            let label = ap.estado_asignado === "aprobado" ? "Proyecto aprobado" : ap.estado_asignado === "devuelto" ? "Proyecto devuelto" : ap.estado_asignado === "rechazado" ? "Proyecto no aprobado" : `Estado: ${ap.estado_asignado}`
-            items.push({ id: `approval_${ap.id_aprobacion || ap.id_aprobacion_proyecto || Math.random()}`, text: `${label}: ${proj?.nombre || ap.id_proyecto}`, ts: ap.fecha_aprobacion || new Date().toISOString(), type: ap.estado_asignado })
-          }
+          const proj = projects.find((p) => p.id_proyecto === ap.id_proyecto)
+          let label = ap.estado_asignado === "aprobado" ? "Proyecto aprobado" : ap.estado_asignado === "devuelto" ? "Proyecto devuelto" : ap.estado_asignado === "rechazado" ? "Proyecto no aprobado" : `Estado: ${ap.estado_asignado}`
+          items.push({ id: `ap_${ap.id_aprobacion || ap.id_aprobacion_proyecto || `${ap.id_proyecto}_${ap.fecha_aprobacion}`}`, projectId: ap.id_proyecto, text: `${label}: ${proj?.nombre || ap.id_proyecto}`, ts: ap.fecha_aprobacion || new Date().toISOString(), type: ap.estado_asignado })
         }
       }
       const historias = await historiasAPI.getAll()
@@ -55,46 +64,151 @@ export const Header = () => {
       const storyApprovals = await aprobacionesHistoriaAPI.getAll()
       for (const ah of storyApprovals) {
         if (histIds.has(ah.id_historia) && ah.estado === "aprobado") {
-          if (!lastSeen || (ah.fecha && new Date(ah.fecha) > lastSeen)) {
-            const story = myHist.find((h) => h.id_historia === ah.id_historia)
-            const proj = projects.find((p) => p.id_proyecto === story?.id_proyecto)
-            items.push({ id: `hist_${ah.id_aprobacion_historia || Math.random()}`, text: `Historia aprobada en ${proj?.nombre || story?.id_proyecto}`, ts: ah.fecha || new Date().toISOString(), type: "historia" })
-          }
+          const story = myHist.find((h) => h.id_historia === ah.id_historia)
+          const proj = projects.find((p) => p.id_proyecto === story?.id_proyecto)
+          items.push({ id: `ah_${ah.id_aprobacion_historia || `${ah.id_historia}_${ah.fecha}`}`, projectId: story?.id_proyecto, text: `Historia aprobada en ${proj?.nombre || story?.id_proyecto}`, ts: ah.fecha || new Date().toISOString(), type: "historia" })
         }
+      }
+      const inReview = projects.filter((p) => p.estado_proyecto === "en-revision")
+      for (const p of inReview) {
+        items.push({ id: `rev_${p.id_proyecto}`, text: `Proyecto en revisión: ${p.nombre || p.id_proyecto}`, ts: new Date().toISOString(), type: "pendiente" })
       }
     }
     items.sort((a, b) => new Date(b.ts) - new Date(a.ts))
-    setNotifications(items)
-    const count = items.filter((it) => !ts || new Date(it.ts) > new Date(ts)).length
-    setUnread(count)
+    const byId = new Map()
+    for (const it of [...items, ...notifications]) byId.set(it.id, it)
+    const merged = Array.from(byId.values()).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+    setNotifications(merged)
+    const read = getReadSet()
+    setUnread(merged.filter((it) => !read.has(it.id)).length)
   }
 
   useEffect(() => {
     let i
     refreshNotifications()
-    i = setInterval(refreshNotifications, 30000)
+    i = setInterval(refreshNotifications, 5000)
     return () => {
       if (i) clearInterval(i)
     }
   }, [currentUser, isManager])
 
+  useEffect(() => {
+    if (!currentUser) return
+    const init = async () => {
+      if (!isManager) {
+        const ps = await proyectosAPI.getByLeader(currentUser.id_usuario)
+        setProjectIds(ps.map((p) => p.id_proyecto))
+      }
+      const hs = await historiasAPI.getAll()
+      setHistMap(new Map(hs.map((h) => [h.id_historia, h.id_proyecto])))
+    }
+    init()
+  }, [currentUser, isManager])
+
+  useEffect(() => {
+    if (!currentUser) return
+    const ch = supabase.channel(`nexus-live-${currentUser.id_usuario}`)
+    const pushItem = (item) => {
+      setNotifications((prev) => {
+        const m = new Map(prev.map((x) => [x.id, x]))
+        m.set(item.id, item)
+        const merged = Array.from(m.values()).sort((a, b) => new Date(b.ts) - new Date(a.ts))
+        const read = getReadSet()
+        setUnread(merged.filter((it) => !read.has(it.id)).length)
+        return merged
+      })
+    }
+    if (isManager) {
+      ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "proyecto" }, (payload) => {
+        const p = payload.new
+        if (p?.estado_proyecto === "pendiente") {
+          const item = { id: `p_${p.id_proyecto}`, text: `Nuevo proyecto pendiente: ${p.nombre}`, ts: p.fecha_creacion || new Date().toISOString(), type: "pendiente" }
+          const read = getReadSet()
+          if (!read.has(item.id)) pushItem(item)
+        }
+      })
+      ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "evidencia" }, (payload) => {
+        const ev = payload.new
+        const pid = histMap.get(ev.id_historia)
+        const item = { id: `e_${ev.id_evidencia}`, text: `Nueva evidencia en ${pid || ev.id_historia}`, ts: ev.fecha_subida || new Date().toISOString(), type: "evidencia" }
+        const read = getReadSet()
+        if (!read.has(item.id)) pushItem(item)
+      })
+    } else {
+      ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "aprobacion_proyecto" }, (payload) => {
+        const ap = payload.new
+        if (projectIds.includes(ap.id_proyecto)) {
+          const label = ap.estado_asignado === "aprobado" ? "Proyecto aprobado" : ap.estado_asignado === "devuelto" ? "Proyecto devuelto" : ap.estado_asignado === "rechazado" ? "Proyecto no aprobado" : `Estado: ${ap.estado_asignado}`
+          const item = { id: `ap_${ap.id_aprobacion || `${ap.id_proyecto}_${ap.fecha_aprobacion}`}`, projectId: ap.id_proyecto, text: `${label}: ${ap.id_proyecto}`, ts: ap.fecha_aprobacion || new Date().toISOString(), type: ap.estado_asignado }
+          const read = getReadSet()
+          if (!read.has(item.id)) pushItem(item)
+        }
+      })
+      ch.on("postgres_changes", { event: "INSERT", schema: "public", table: "aprobacion_historia" }, (payload) => {
+        const ah = payload.new
+        if (ah.estado === "aprobado") {
+          const pid = histMap.get(ah.id_historia)
+          if (pid && projectIds.includes(pid)) {
+            const item = { id: `ah_${ah.id_aprobacion_historia || `${ah.id_historia}_${ah.fecha}`}`, projectId: pid, text: `Historia aprobada en ${pid}`, ts: ah.fecha || new Date().toISOString(), type: "historia" }
+            const read = getReadSet()
+            if (!read.has(item.id)) pushItem(item)
+          }
+        }
+      })
+      ch.on("postgres_changes", { event: "UPDATE", schema: "public", table: "proyecto" }, (payload) => {
+        const np = payload.new
+        if (projectIds.includes(np.id_proyecto) && np.estado_proyecto === "en-revision") {
+          const item = { id: `rev_${np.id_proyecto}`, projectId: np.id_proyecto, text: `Proyecto en revisión: ${np.id_proyecto}`, ts: new Date().toISOString(), type: "pendiente" }
+          const read = getReadSet()
+          if (!read.has(item.id)) pushItem(item)
+        }
+      })
+    }
+    ch.subscribe()
+    return () => {
+      supabase.removeChannel(ch)
+    }
+  }, [currentUser, isManager, projectIds, histMap])
+
   const toggleOpen = () => {
     const next = !open
     setOpen(next)
-    if (!next && lastSeenKey) {
-      sessionStorage.setItem(lastSeenKey, new Date().toISOString())
-      setUnread(0)
-      setNotifications([])
-    }
   }
 
   const markAllSeen = () => {
-    if (lastSeenKey) {
-      sessionStorage.setItem(lastSeenKey, new Date().toISOString())
-    }
+    const read = getReadSet()
+    notifications.forEach((n) => read.add(n.id))
+    setReadSet(read)
     setUnread(0)
-    setNotifications([])
     setOpen(false)
+  }
+
+  const markOneSeen = (notif) => {
+    const read = getReadSet()
+    if (!read.has(notif.id)) {
+      read.add(notif.id)
+      setReadSet(read)
+      setUnread((c) => Math.max(0, c - 1))
+      setNotifications((prev) => prev.filter((n) => n.id !== notif.id))
+      const mapTarget = () => {
+        if (isManager) {
+          if (notif.type === "pendiente") return { module: "approval", target: "approvalDetail" }
+          if (notif.type === "evidencia") return { module: "tracking", target: "trackingReview" }
+          return { module: "approval", target: "approvalDetail" }
+        } else {
+          if (["aprobado", "devuelto", "rechazado"].includes(notif.type)) return { module: "projects", target: "projectsDetail" }
+          if (notif.type === "historia") return { module: "tracking", target: "trackingReview" }
+          if (notif.type === "pendiente") return { module: "projects", target: "projectsDetail" }
+          return { module: "projects", target: "projectsDetail" }
+        }
+      }
+      const target = mapTarget()
+      if (target && notif.projectId) {
+        window.dispatchEvent(
+          new CustomEvent("nexus:navigate", { detail: { module: target.module, projectId: notif.projectId, target: target.target } }),
+        )
+      }
+    }
   }
 
   return (
@@ -128,14 +242,14 @@ export const Header = () => {
                     <span className="text-xs text-gray-400">{isManager ? "Gerente" : "Líder"}</span>
                   </div>
                   <div className="max-h-80 overflow-y-auto">
-                    {notifications.length === 0 ? (
+                    {notifications.filter((n)=>!getReadSet().has(n.id)).length === 0 ? (
                       <div className="px-4 py-6 text-sm text-gray-500 flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-purple-600" />
                         No hay actividad nueva
                       </div>
                     ) : (
-                      notifications.slice(0, 10).map((n) => (
-                        <div key={n.id} className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50">
+                      notifications.filter((n)=>!getReadSet().has(n.id)).slice(0, 10).map((n) => (
+                        <div key={n.id} onClick={()=>markOneSeen(n)} className="px-4 py-3 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
                           {n.type === "aprobado" && <CheckCircle2 className="w-4 h-4 text-green-600" />}
                           {n.type === "devuelto" && <RotateCcw className="w-4 h-4 text-orange-600" />}
                           {n.type === "rechazado" && <XCircle className="w-4 h-4 text-red-600" />}
