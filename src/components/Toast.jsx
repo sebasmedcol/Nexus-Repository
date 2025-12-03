@@ -54,7 +54,7 @@ export const Toast = ({ message, type = "info", onClose, duration = 3000 }) => {
   const styles = getToastStyles()
 
   return (
-    <div className="fixed top-4 right-4 z-50 animate-slideIn">
+    <div className="fixed bottom-4 right-4 z-50 animate-slideIn">
       <div
         className={`${styles.bg} ${styles.border} border-2 rounded-lg shadow-xl min-w-[320px] max-w-md overflow-hidden`}
       >
