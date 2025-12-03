@@ -11,6 +11,7 @@ import { ApprovalModule } from "./components/modules/ApprovalModule"
 import { TrackingModule } from "./components/modules/TrackingModule"
 import { HistoryModule } from "./components/modules/HistoryModule"
 import { UsersModule } from "./components/modules/UsersModule"
+import logoWatermark from "./assets/logo-watermark.png"
 
 function App() {
   const { currentUser, loading, isManager } = useAuth()
@@ -69,7 +70,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative">
       {/* Sidebar Navigation - Fixed */}
       <Navigation 
         activeModule={activeModule} 
@@ -77,23 +78,30 @@ function App() {
         isManager={isManager}
         onCollapse={handleSidebarCollapse}
       />
+      
 
       {/* Main Content Area - Con margen dinámico para el sidebar */}
-      <div className={`transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
+      <div className={`transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'ml-20' : 'ml-64'} relative z-10`}>
         <Header />
         
         <main className="py-8">
-          <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8">
-            {activeModule === "projects" && <ProjectsModule onShowToast={showToast} />}
-            {activeModule === "approval" && <ApprovalModule onShowToast={showToast} />}
-            {activeModule === "tracking" && <TrackingModule onShowToast={showToast} />}
-            {activeModule === "history" && <HistoryModule onShowToast={showToast} />}
-            {activeModule === "users" && <UsersModule onShowToast={showToast} />}
+          <div className="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 relative">
+            <div className="absolute inset-0 flex items-center justify-center z-0 pointer-events-none select-none">
+              <img src={logoWatermark} alt="watermark-center" className="opacity-5 max-w-xl h-auto" />
+            </div>
+            <div className="relative z-10">
+              {activeModule === "projects" && <ProjectsModule onShowToast={showToast} />}
+              {activeModule === "approval" && <ApprovalModule onShowToast={showToast} />}
+              {activeModule === "tracking" && <TrackingModule onShowToast={showToast} />}
+              {activeModule === "history" && <HistoryModule onShowToast={showToast} />}
+              {activeModule === "users" && <UsersModule onShowToast={showToast} />}
+            </div>
           </div>
         </main>
       </div>
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={closeToast} />}
+      <img src={logoWatermark} alt="watermark" className="fixed bottom-4 right-4 w-40 opacity-5 pointer-events-none select-none z-0" />
     </div>
   )
 }
