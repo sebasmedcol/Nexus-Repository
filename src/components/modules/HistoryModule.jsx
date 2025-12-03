@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useAuth } from "../../contexts/AuthContext"
-import { proyectosAPI, historiasAPI } from "../../lib/api"
-import { Modal } from "../Modal"
+import { proyectosAPI, historiasAPI, aprobacionesAPI, aprobacionesHistoriaAPI } from "../../lib/api"
+import Modal from "../Modal"
 import { Filter, X, Eye, Building2, Calendar, TrendingUp, CheckCircle, Clock, XCircle, Brain } from "lucide-react"
 
 export const HistoryModule = ({ onShowToast }) => {
@@ -18,6 +18,12 @@ export const HistoryModule = ({ onShowToast }) => {
   })
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [selectedProject, setSelectedProject] = useState(null)
+  const [showDetailsModal, setShowDetailsModal] = useState(false)
+  const [detailsStories, setDetailsStories] = useState([])
+  const [detailsApprovals, setDetailsApprovals] = useState([])
+  const [detailsStoryApprovals, setDetailsStoryApprovals] = useState([])
+  const [showProjectStates, setShowProjectStates] = useState(true)
+  const [showStoryHistory, setShowStoryHistory] = useState(false)
 
   useEffect(() => {
     loadProjects()
@@ -86,6 +92,54 @@ export const HistoryModule = ({ onShowToast }) => {
   const viewCancelReason = (project) => {
     setSelectedProject(project)
     setShowCancelModal(true)
+  }
+
+  const openDetailsModal = async (project) => {
+    setSelectedProject(project)
+    setShowDetailsModal(true)
+    setShowProjectStates(true)
+    setShowStoryHistory(false)
+    try {
+      const stories = await historiasAPI.getByProject(project.id_proyecto)
+      setDetailsStories(stories)
+      const approvals = await aprobacionesAPI.getAll()
+      const filtered = approvals
+        .filter((a) => a.id_proyecto === project.id_proyecto)
+        .sort((a, b) => {
+          const da = new Date(a.fecha_aprobacion)
+          const db = new Date(b.fecha_aprobacion)
+          const cmp = db - da
+          if (cmp !== 0) return cmp
+          return (b.id_aprobacion || 0) - (a.id_aprobacion || 0)
+        })
+      setDetailsApprovals(filtered)
+      try {
+        const storyApprovals = await aprobacionesHistoriaAPI.getAll()
+        const storyIds = new Set(stories.map((s) => s.id_historia))
+        const history = storyApprovals
+          .filter((ah) => storyIds.has(ah.id_historia))
+          .map((ah) => ({ ...ah, historia: stories.find((s) => s.id_historia === ah.id_historia) }))
+          .sort((a, b) => {
+            const da = new Date(a.fecha)
+            const db = new Date(b.fecha)
+            const cmp = db - da
+            if (cmp !== 0) return cmp
+            return (b.id_aprobacion_historia || 0) - (a.id_aprobacion_historia || 0)
+          })
+        setDetailsStoryApprovals(history)
+      } catch (e) {
+        setDetailsStoryApprovals([])
+      }
+    } catch (err) {
+      setDetailsStories([])
+      setDetailsApprovals([])
+      setDetailsStoryApprovals([])
+    }
+  }
+
+  const closeDetailsModal = () => {
+    setShowDetailsModal(false)
+    setSelectedProject(null)
   }
 
   const getStatusLabel = (status) => {
@@ -314,15 +368,24 @@ export const HistoryModule = ({ onShowToast }) => {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      {project.estado_proyecto === "cancelado" && (
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => viewCancelReason(project)}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
+                          onClick={() => openDetailsModal(project)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border-2 border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          Ver razón
+                          Ver más
                         </button>
-                      )}
+                        {project.estado_proyecto === "cancelado" && (
+                          <button
+                            onClick={() => viewCancelReason(project)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Ver razón
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -371,6 +434,136 @@ export const HistoryModule = ({ onShowToast }) => {
           </div>
         )}
       </Modal>
+
+      {/* Details Modal */}
+      <Modal isOpen={showDetailsModal} onClose={closeDetailsModal} title="Detalle del Proyecto">
+  {selectedProject && (
+    <div className="space-y-5">
+      <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+        <h4 className="text-lg font-bold text-purple-900 mb-1">{selectedProject.nombre}</h4>
+        <p className="text-sm text-purple-700">ID: {selectedProject.id_proyecto}</p>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => setShowProjectStates((v) => !v)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+            showProjectStates ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-700 border-gray-300"
+          }`}
+        >
+          {showProjectStates ? "Ocultar historial de estados" : "Historial de Estados"}
+        </button>
+        <button
+          onClick={() => setShowStoryHistory((v) => !v)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+            showStoryHistory ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-700 border-gray-300"
+          }`}
+        >
+          {showStoryHistory ? "Ocultar historial de historias" : "Historial de Historias"}
+        </button>
+      </div>
+
+      {showProjectStates && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h5 className="text-sm font-semibold text-gray-700 mb-2">Historial de Estados del Proyecto</h5>
+          {detailsApprovals.length === 0 ? (
+            <p className="text-sm text-gray-500">Sin historial</p>
+          ) : (
+            <div className="space-y-3">
+              {detailsApprovals.map((ap) => (
+                <div key={ap.id_aprobacion} className="flex items-start justify-between bg-gray-50 p-3 rounded-lg border">
+                  <div>
+                    <span className="text-xs font-semibold mr-2">{ap.fecha_aprobacion}</span>
+                    <span className={`text-xs px-2 py-1 rounded-full border ${
+                      ap.estado_asignado === "aprobado"
+                        ? "bg-green-100 text-green-700 border-green-200"
+                        : ap.estado_asignado === "devuelto"
+                        ? "bg-orange-100 text-orange-700 border-orange-200"
+                        : ap.estado_asignado === "rechazado" || ap.estado_asignado === "no-aprobado"
+                        ? "bg-red-100 text-red-700 border-red-200"
+                        : "bg-gray-100 text-gray-700 border-gray-200"
+                    }`}>
+                      {ap.estado_asignado}
+                    </span>
+                  </div>
+                  {ap.motivo_devolucion && (
+                    <p className="text-xs text-gray-700 max-w-md">{ap.motivo_devolucion}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white border border-gray-200 rounded-lg p-4">
+        <h5 className="text-sm font-semibold text-gray-700 mb-2">Historias de Usuario</h5>
+        {detailsStories.length === 0 ? (
+          <p className="text-sm text-gray-500">No hay historias registradas</p>
+        ) : (
+          <ul className="space-y-2">
+            {detailsStories.map((s) => (
+              <li key={s.id_historia} className="flex items-center justify-between py-2 border-b border-gray-100">
+                <span className="text-sm text-gray-700">{s.descripcion}</span>
+                <span
+                  className={`text-xs px-2 py-1 rounded-full border ${
+                    s.estado_historia === "aprobado"
+                      ? "bg-green-100 text-green-700 border-green-200"
+                      : s.estado_historia === "en_revision"
+                      ? "bg-yellow-100 text-yellow-700 border-yellow-200"
+                      : "bg-gray-100 text-gray-700 border-gray-200"
+                  }`}
+                >
+                  {s.estado_historia}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {showStoryHistory && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4">
+          <h5 className="text-sm font-semibold text-gray-700 mb-2">Historial de Historias de Usuario</h5>
+          {detailsStoryApprovals.length === 0 ? (
+            <p className="text-sm text-gray-500">Sin actividad registrada</p>
+          ) : (
+            <div className="space-y-3">
+              {detailsStoryApprovals.map((ah) => (
+                <div key={ah.id_aprobacion_historia || `${ah.id_historia}_${ah.fecha}`} className="flex items-start justify-between bg-gray-50 p-3 rounded-lg border">
+                  <div>
+                    <span className="text-xs font-semibold mr-2">{ah.fecha}</span>
+                    <span className="text-sm text-gray-800">{ah.historia?.descripcion || ah.id_historia}</span>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full border ${
+                        ah.estado === "aprobado"
+                          ? "bg-green-100 text-green-700 border-green-200"
+                          : ah.estado === "rechazado"
+                          ? "bg-red-100 text-red-700 border-red-200"
+                          : "bg-gray-100 text-gray-700 border-gray-200"
+                      }`}
+                    >
+                      {ah.estado}
+                    </span>
+                    {ah.comentario && <p className="text-xs text-gray-700 mt-1">Motivo: {ah.comentario}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex justify-end pt-2">
+        <button onClick={closeDetailsModal} className="px-5 py-2.5 border-2 border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  )}
+</Modal>
     </div>
   )
 }

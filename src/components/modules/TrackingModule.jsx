@@ -49,6 +49,8 @@ export const TrackingModule = () => {
   const [projectCompany, setProjectCompany] = useState(null)
   const [leaders, setLeaders] = useState({})
 
+  const [showRejectedModal, setShowRejectedModal] = useState(false)
+  const [rejectedList, setRejectedList] = useState([])
   const [managerComment, setManagerComment] = useState("")
   const [uploadingFile, setUploadingFile] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -214,8 +216,33 @@ export const TrackingModule = () => {
     }
     setPendingEvidences(evidences)
 
+    // Calcular historias rechazadas más recientes por historia
+    try {
+      const approvals = await aprobacionesHistoriaAPI.getAll()
+      const ids = new Set(stories.map((s) => s.id_historia))
+      const rejected = approvals.filter((a) => ids.has(a.id_historia) && a.estado === "rechazado")
+      const grouped = new Map()
+      rejected.forEach((a) => {
+        const prev = grouped.get(a.id_historia)
+        if (!prev) {
+          grouped.set(a.id_historia, a)
+        } else {
+          const da = new Date(a.fecha)
+          const db = new Date(prev.fecha)
+          if (db - da < 0 || (db - da === 0 && (prev.id_aprobacion_historia || 0) < (a.id_aprobacion_historia || 0))) {
+            grouped.set(a.id_historia, a)
+          }
+        }
+      })
+      const latestRejected = Array.from(grouped.values()).map((a) => ({
+        ...a,
+        historia: stories.find((s) => s.id_historia === a.id_historia),
+      }))
+      setRejectedList(latestRejected)
+    } catch (err) {
+      setRejectedList([])
+    }
     setSelectedStories(storiesInReview.map((s) => s.id_historia))
-
     setShowProgressDetailsModal(true)
   }
 
@@ -977,6 +1004,30 @@ export const TrackingModule = () => {
               Confirmar Rechazo
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showRejectedModal} onClose={() => setShowRejectedModal(false)} title="Historias Rechazadas">
+        {rejectedList.length === 0 ? (
+          <p className="text-sm text-gray-600">No hay rechazos recientes</p>
+        ) : (
+          <div className="space-y-3">
+            {rejectedList.map((a) => (
+              <div key={a.id_aprobacion_historia || `${a.id_historia}_${a.fecha}`} className="bg-white border border-gray-200 rounded-lg p-4 flex items-start justify-between">
+                <div>
+                  <p className="text-sm text-gray-800 font-medium">{a.historia?.descripcion || a.id_historia}</p>
+                  <p className="text-xs text-gray-500">Fecha: {a.fecha}</p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block text-xs px-2 py-1 bg-red-100 text-red-700 border border-red-200 rounded-full">Rechazado</span>
+                  {a.comentario && <p className="text-xs text-gray-700 mt-1">Motivo: {a.comentario}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end pt-4">
+          <button onClick={() => setShowRejectedModal(false)} className="px-5 py-2.5 border-2 border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50">Cerrar</button>
         </div>
       </Modal>
 

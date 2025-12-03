@@ -327,10 +327,15 @@ export const ProjectsModule = ({ onShowToast }) => {
         (a) => a.id_proyecto === project.id_proyecto && a.estado_asignado === tipo,
       )
 
-      // Ordenar por fecha para obtener la más reciente
-      const approvalFound = projectApprovals.sort(
-        (a, b) => new Date(b.fecha_aprobacion) - new Date(a.fecha_aprobacion),
-      )[0]
+      // Ordenar por fecha (desc) y, en empate, por id_aprobacion (desc) para obtener la más reciente
+      const approvalFound = projectApprovals
+        .sort((a, b) => {
+          const da = new Date(a.fecha_aprobacion)
+          const db = new Date(b.fecha_aprobacion)
+          const cmp = db - da
+          if (cmp !== 0) return cmp
+          return (b.id_aprobacion || 0) - (a.id_aprobacion || 0)
+        })[0]
 
       if (approvalFound && approvalFound.motivo_devolucion) {
         setReturnReason(approvalFound.motivo_devolucion)
