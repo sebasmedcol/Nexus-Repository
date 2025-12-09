@@ -921,17 +921,17 @@ export const ProjectsModule = ({ onShowToast }) => {
                           <p className="text-sm text-gray-700">{story.descripcion}</p>
                           <span
                             className={`inline-block mt-2 px-2 py-0.5 rounded-full text-xs font-medium ${
-                              story.estado_historia === "completada"
+                              story.estado_historia === "aprobado"
                                 ? "bg-green-100 text-green-700"
-                                : story.estado_historia === "aprobada"
+                                : story.estado_historia === "en_revision"
                                   ? "bg-blue-100 text-blue-700"
                                   : "bg-yellow-100 text-yellow-700"
                             }`}
                           >
-                            {story.estado_historia === "completada"
-                              ? "Completada"
-                              : story.estado_historia === "aprobada"
-                                ? "Aprobada"
+                            {story.estado_historia === "aprobado"
+                              ? "Aprobada"
+                              : story.estado_historia === "en_revision"
+                                ? "En Revisión"
                                 : "Pendiente"}
                           </span>
                         </div>
